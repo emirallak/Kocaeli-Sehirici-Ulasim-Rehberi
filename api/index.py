@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import logging
 import os
+from difflib import get_close_matches
 from datetime import datetime, timedelta, timezone
 from math import ceil
 from bisect import bisect_left, bisect_right
 from functools import lru_cache
+from threading import Lock
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from api.app.api.stops import StopNameIndex, build_stop_name_index, resolve_stop_ids
+from api.app.api.stops import StopNameIndex, build_stop_name_index, normalize_text, resolve_stop_ids
 from api.app.chat.intent import extract_trip_intent
 from api.app.data.loader import GTFSLoadError, load_snapshot
 from api.app.data.transport import public_line_code
@@ -29,6 +31,7 @@ app = FastAPI(title="Kocaeli Ulaşım Rota Planlayıcı", version="0.2.0")
 logger = logging.getLogger(__name__)
 RAW_DATA_DIR = os.path.join(os.path.dirname(__file__), "app", "data", "raw")
 PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "..", "public")
+_snapshot_lock = Lock()
 
 
 class ChatRequest(BaseModel):
@@ -43,7 +46,7 @@ def load_static_snapshot() -> None:
 
     try:
         snapshot = load_snapshot(RAW_DATA_DIR)
-    except GTFSLoadError as error:
+    except (GTFSLoadError, OSError, EOFError) as error:
         logger.error("Kocaeli data is unavailable: %s", error)
         app.state.load_error = str(error)
         return
@@ -51,9 +54,12 @@ def load_static_snapshot() -> None:
 
 
 def _install_snapshot(snapshot: RoutingSnapshot) -> None:
+    stop_name_index = build_stop_name_index(snapshot.indexes)
+    if not snapshot.patterns or not stop_name_index.get(""):
+        raise GTFSLoadError("GTFS feed contains no routable stops")
     app.state.snapshot = snapshot
     app.state.load_error = None
-    app.state.stop_name_index = build_stop_name_index(snapshot.indexes)
+    app.state.stop_name_index = stop_name_index
     @lru_cache(maxsize=64)
     def plan(origins, destinations, limit, routing_mode):
         counts = {}
@@ -79,8 +85,9 @@ def chat(request: ChatRequest) -> dict[str, object]:
         )
 
     indexes = snapshot.indexes
-    origin_ids = resolve_stop_ids(intent["origin"], stop_name_index, indexes)
-    destination_ids = resolve_stop_ids(intent["destination"], stop_name_index, indexes)
+    # Cache keys must be immutable even if a future resolver returns lists.
+    origin_ids = tuple(dict.fromkeys(_resolve_query(intent["origin"], stop_name_index, indexes)))
+    destination_ids = tuple(dict.fromkeys(_resolve_query(intent["destination"], stop_name_index, indexes)))
     for stop_id in origin_ids:
         _log_resolved_stop("origin candidate", stop_id, snapshot)
     for stop_id in destination_ids:
@@ -91,10 +98,20 @@ def chat(request: ChatRequest) -> dict[str, object]:
             unresolved.append(intent["origin"])
         if not destination_ids:
             unresolved.append(intent["destination"])
-        raise HTTPException(
-            status_code=404,
-            detail={"message": "Stop not found", "unresolved_queries": unresolved},
-        )
+        suggestions = {
+            query["name"]: _stop_suggestions(query["name"], stop_name_index, indexes)
+            for query in unresolved
+        }
+        names = ", ".join(query["name"] for query in unresolved)
+        near = list(dict.fromkeys(name for choices in suggestions.values() for name in choices))
+        message = f"Durak bulunamadı: {names}."
+        if near:
+            message += " Yakın duraklar: " + ", ".join(near) + "."
+        raise HTTPException(status_code=422, detail={
+            "message": message,
+            "unresolved_queries": unresolved,
+            "suggestions": suggestions,
+        })
 
     candidate_counts: dict[str, int | None] = {}
     cached = getattr(app.state, 'route_plan', None)
@@ -135,6 +152,35 @@ def chat(request: ChatRequest) -> dict[str, object]:
     }
 
 
+@app.get("/api/health")
+@app.get("/health", include_in_schema=False)
+def health() -> dict[str, int | str]:
+    snapshot, _ = _state()
+    return {"status": "ok", "stops": len(snapshot.stops), "patterns": len(snapshot.patterns)}
+
+
+def _resolve_query(query, stop_name_index, indexes):
+    """Try the stop name before municipality text used by map search boxes."""
+    name = query.get("name", "")
+    short_name = normalize_text(name.split(",", 1)[0])
+    for suffix in (" kocaeli merkezi", " kocaeli merkez", " kocaeli", " izmit merkez"):
+        if short_name.endswith(suffix):
+            short_name = short_name[:-len(suffix)].strip()
+            break
+    if short_name and short_name != normalize_text(name):
+        matches = resolve_stop_ids({**query, "name": short_name}, stop_name_index, indexes)
+        if matches:
+            return matches
+    return resolve_stop_ids(query, stop_name_index, indexes)
+
+
+def _stop_suggestions(name, stop_name_index, indexes):
+    names = stop_name_index.get("", {})
+    query = normalize_text(name.split(",", 1)[0])
+    matches = get_close_matches(query, names.keys(), n=3, cutoff=0.70)
+    return [indexes.stops[names[key][0]].name for key in matches]
+
+
 def _log_resolved_stop(
     side: str, stop_id: int | None, snapshot: RoutingSnapshot
 ) -> None:
@@ -157,10 +203,15 @@ def _log_resolved_stop(
 
 def _state() -> tuple[RoutingSnapshot, StopNameIndex]:
     if not hasattr(app.state, "snapshot"):
-        try:
-            _install_snapshot(load_snapshot(RAW_DATA_DIR))
-        except GTFSLoadError as error:
-            raise HTTPException(status_code=503, detail=str(error)) from error
+        with _snapshot_lock:
+            if not hasattr(app.state, "snapshot"):
+                if getattr(app.state, "load_error", None):
+                    raise HTTPException(status_code=503, detail=app.state.load_error)
+                try:
+                    _install_snapshot(load_snapshot(RAW_DATA_DIR))
+                except (GTFSLoadError, OSError, EOFError) as error:
+                    app.state.load_error = str(error)
+                    raise HTTPException(status_code=503, detail=str(error)) from error
     return app.state.snapshot, app.state.stop_name_index
 
 

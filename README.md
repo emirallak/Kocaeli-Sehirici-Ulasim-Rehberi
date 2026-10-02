@@ -21,6 +21,6 @@ python -m unittest discover -s tests
 
 ## Vercel
 
-Kök dizini proje kökü olarak seçin. `public/` statik dosyaları CDN'den sunulur; `vercel.json` içindeki `/api/*` rewrite isteği `api/index.py` içindeki FastAPI uygulamasına iletir. GTFS dosyası kodun bulunduğu dizine göre yüklenir; çalışma dizinine veya dış ağa bağımlı değildir. İlk soğuk istekte veri grafiğinin kurulması birkaç saniye sürebilir.
+Kök dizini proje kökü olarak seçin. `public/` statik dosyaları CDN'den sunulur. Vercel'deki `/api/chat` isteği `vercel.json` ile uygulamanın `/chat` yoluna eşlenir; yerel FastAPI uygulaması her iki yolu da kabul eder. `/api/health` veri grafiğinin yüklenip yüklenmediğini gösterir. GTFS dosyası kodun bulunduğu dizine göre yüklenir; çalışma dizinine veya dış ağa bağımlı değildir. İlk soğuk istekte veri grafiğinin kurulması birkaç saniye sürebilir.
 
 Süre ve varış tahminleri ortalama hız, durak sayısı ve biniş başına varsayılan 5 dakika bekleme üzerinden hesaplanır. Canlı sefer ve trafik verisi içermez.

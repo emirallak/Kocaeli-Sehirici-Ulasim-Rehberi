@@ -1,11 +1,14 @@
 """Regression: a busier wrong-direction platform must not hide a direct ride."""
 
 import unittest
+from functools import lru_cache
 from unittest.mock import patch
+
+from fastapi.testclient import TestClient
 
 from api.app.api.stops import build_stop_name_index, resolve_stop_ids
 from api.app.data.indexes import build_indexes
-from api.index import ChatRequest, chat
+from api.index import ChatRequest, app, chat
 from api.app.routing.direct import direct
 from api.app.routing.ranking import score
 from api.app.routing.search import best_routes
@@ -93,6 +96,66 @@ class PlatformRoutingTests(unittest.TestCase):
         self.assertEqual(response['origin']['id'], 1)
         self.assertEqual(response['destination']['id'], 4)
         self.assertEqual(response['itineraries'][0]['transfers'], 0)
+
+    def test_public_api_path_and_rewritten_handler_path_resolve_city_suffix(self):
+        snapshot = RoutingSnapshot(self.indexes, {}, {})
+        intent = {
+            'origin': {'district': '', 'name': 'ALPHA, Kocaeli Merkezi'},
+            'destination': {'district': '', 'name': 'BETA, Kocaeli Merkezi'},
+        }
+        with patch('api.index._state', return_value=(snapshot, self.name_index)), \
+                patch('api.index.extract_trip_intent', return_value=intent):
+            client = TestClient(app)
+            for path in ('/api/chat', '/chat'):
+                result = client.post(path, json={'message': 'trip'})
+                self.assertEqual(result.status_code, 200, result.text)
+                self.assertEqual(result.json()['itineraries'][0]['transfers'], 0)
+
+    def test_unresolved_name_is_a_validation_error_with_suggestions(self):
+        snapshot = RoutingSnapshot(self.indexes, {}, {})
+        intent = {
+            'origin': {'district': '', 'name': 'Alphaa'},
+            'destination': {'district': '', 'name': 'Unknown Terminal'},
+        }
+        with patch('api.index._state', return_value=(snapshot, self.name_index)), \
+                patch('api.index.extract_trip_intent', return_value=intent):
+            result = TestClient(app).post('/api/chat', json={'message': 'trip'})
+        self.assertEqual(result.status_code, 422)
+        detail = result.json()['detail']
+        self.assertEqual(detail['unresolved_queries'], [intent['destination']])
+        self.assertIn('Unknown Terminal', detail['message'])
+
+    def test_cache_receives_hashable_platform_ids_even_if_resolver_returns_lists(self):
+        snapshot = RoutingSnapshot(self.indexes, {}, {})
+        intent = {
+            'origin': {'district': '', 'name': 'Alpha'},
+            'destination': {'district': '', 'name': 'Beta'},
+        }
+        @lru_cache(maxsize=2)
+        def cached_plan(origins, destinations, limit, routing_mode):
+            counts = {}
+            return best_routes(self.indexes, origins, destinations, limit, counts, routing_mode), counts
+        with patch('api.index._state', return_value=(snapshot, self.name_index)), \
+                patch('api.index.extract_trip_intent', return_value=intent), \
+                patch('api.index.resolve_stop_ids', side_effect=[list(self.origins), list(self.destinations)]), \
+                patch.object(app.state, 'route_plan', (snapshot, cached_plan), create=True):
+            response = chat(ChatRequest(message='trip', limit=1))
+        self.assertEqual(response['itineraries'][0]['transfers'], 0)
+        self.assertEqual(cached_plan.cache_info().misses, 1)
+
+    def test_unrelated_fuzzy_name_does_not_route_to_another_stop(self):
+        stops = {
+            0: Stop(0, '0', 'ÇINARALTI', None, None),
+            1: Stop(1, '1', 'YENİ CUMA DOĞU', None, None),
+        }
+        patterns = {
+            0: Pattern(0, 'A', '0', (0, 1), frozenset({'W'}),
+                       frozenset({Weekday.MONDAY}), 'A', frozenset())
+        }
+        indexes = build_indexes(stops, patterns)
+        names = build_stop_name_index(indexes)
+        self.assertEqual(resolve_stop_ids({'name': 'ZZZZ INVALID'}, names, indexes), ())
+        self.assertEqual(resolve_stop_ids({'name': 'CINARALTI'}, names, indexes), (0,))
 
 
 if __name__ == '__main__':

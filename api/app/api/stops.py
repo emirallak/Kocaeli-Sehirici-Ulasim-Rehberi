@@ -106,7 +106,7 @@ def resolve_stop_ids(
 
     # Exact, substring, token overlap, and fuzzy matches receive descending
     # scores.  A weak match is reported as unresolved rather than guessed.
-    if best_score < 0.45 or not scored_candidates:
+    if best_score < 0.70 or not scored_candidates:
         return ()
 
     # A broad place name such as "Umuttepe" can name several nearby platforms.
