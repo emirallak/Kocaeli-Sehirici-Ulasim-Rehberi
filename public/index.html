@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1b38">
+  <meta name="description" content="Kocaeli otobüs ve tramvay rotalarını süre, aktarma ve yürüyüşe göre karşılaştırın.">
+  <title>Kocaeli Rota · Akıllı Ulaşım Asistanı</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="page">
+    <header class="brand" aria-label="Kocaeli Rota">
+      <span class="brand-mark">K</span>
+      <span>KOCAELİ ROTA<small>AKILLI ULAŞIM ASİSTANI</small></span>
+    </header>
+
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="eyebrow">KOCAELİ İÇİN DAHA AKILLI ROTA</div>
+      <h1 id="hero-heading">Şehrin en iyi yolunu<br>tek bakışta bul.</h1>
+      <p>Otobüs, tramvay ve yürüyüş seçeneklerini karşılaştır. Süre, aktarma, yürüyüş veya tramvay önceliğini seç.</p>
+      <div class="hero-tags" aria-hidden="true"><span>◉ Doğrudan hatlar</span><span>◷ Tahmini yolculuk süresi</span><span>⌁ Haritada güzergâh</span></div>
+    </section>
+
+    <section class="search-panel" aria-labelledby="search-heading">
+      <div class="panel-heading"><h2 id="search-heading">Nereye gidiyorsun?</h2><p>Kalkış ve varış durağını yaz, sana uygun üç rotayı karşılaştır.</p></div>
+      <form id="route-form">
+        <div class="field-grid">
+          <label>Kalkış durağı<input id="origin" name="origin" type="text" placeholder="Örn. Kuruçeşme Işıklar" autocomplete="off" required></label>
+          <label>Varış durağı<input id="destination" name="destination" type="text" placeholder="Örn. Yeni Cuma Doğu" autocomplete="off" required></label>
+        </div>
+        <div class="form-actions">
+          <label class="filter-label">Rota filtresi
+            <select id="routing-mode" name="routing_mode">
+              <option value="fastest">En Hızlı</option>
+              <option value="fewest_transfers" selected>En Az Aktarmalı</option>
+              <option value="minimal_walking">En Az Yürümeli</option>
+              <option value="prefer_tram">Tramvay Tercihli</option>
+            </select>
+          </label>
+          <button id="search-button" type="submit">Rotaları bul <span aria-hidden="true">→</span></button>
+        </div>
+      </form>
+    </section>
+
+    <section id="results-section" class="results" aria-live="polite" aria-busy="false" hidden>
+      <div class="result-heading"><div><h2 id="results-title">Önerilen güzergâhlar</h2><p id="results-description"></p></div><span>Süreler ve varış saatleri tahminidir</span></div>
+      <div id="results-list"></div>
+    </section>
+
+    <details class="chat-panel">
+      <summary>Doğal dille rota sor</summary>
+      <form id="chat-form"><label>Sorun<input id="chat-message" type="text" placeholder="Otogar durağından Seka Park durağına nasıl giderim?" required></label><button type="submit">Rotayı göster</button></form>
+      <p>Yukarıdaki rota filtresi bu aramada da kullanılır.</p>
+    </details>
+
+    <footer>Kocaeli Rota · Statik GTFS verisi kullanılır. Süreler ortalama hız, durak sayısı ve her binişte 5 dk bekleme varsayımıyla hesaplanır. Canlı sefer saatleri ve trafik doğrulanmaz.</footer>
+  </main>
+</body>
+</html>

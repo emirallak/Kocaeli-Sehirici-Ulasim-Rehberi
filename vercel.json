@@ -1,0 +1,15 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.py"
+    }
+  ],
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "includeFiles": "api/app/data/raw/**",
+      "excludeFiles": "{tests/**,public/**,frontend/**,**/__pycache__/**}"
+    }
+  }
+}
