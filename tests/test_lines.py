@@ -11,6 +11,30 @@ from api.index import app
 
 
 class LineTests(unittest.TestCase):
+    def _trip_variant_feed(self):
+        root = Path(self.temp.name)
+        (root / 'stops.txt').write_text('stop_id,stop_name,stop_lat,stop_lon\n'
+            'A,İskele,40.7,29.9\nB,Otogar,40.8,30.0\nC,Merkez,40.9,30.1\nD,Hastane,40.85,30.05\n', encoding='utf-8')
+        specs = [
+            ('R1', 'W', '0', 'Merkez', '#', '08:00:00', 'ABC'),
+            ('R2', 'W', '0', 'Merkez', '#', '09:00:00', 'ABC'),
+            ('R3', 'W', '0', 'Merkez', '#', '10:00:00', 'ABC'),
+            ('HEAD', 'W', '0', 'Otogar', '#', '08:00:00', 'ABC'),
+            ('SHORT', 'W', '0', 'Otogar', '#', '11:00:00', 'AB'),
+            ('ALT', 'W', '0', 'Merkez', '#', '12:00:00', 'ADC'),
+            ('NOTE', 'W', '0', 'Merkez', 'VADİKENT GİDER.#2150de', '26:00:00', 'ABC'),
+            ('WEEKEND', 'S', '0', 'Merkez', 'VADİKENT GİDER.#2150de', '09:00:00', 'ABC'),
+            ('MISSING', 'W', '0', 'Merkez', 'Eksik saat#ff0000', '', 'ABC'),
+            ('BACK', 'W', '1', 'İskele', '#', '07:00:00', 'CBA'),
+        ]
+        (root / 'trips.txt').write_text('route_id,service_id,trip_id,direction_id,shape_id,trip_headsign,trip_short_name\n' +
+            ''.join(f'R,{service},{tid},{direction},,{headsign},{note}\n'
+                    for tid, service, direction, headsign, note, time, path in specs), encoding='utf-8')
+        (root / 'stop_times.txt').write_text('trip_id,stop_id,stop_sequence,departure_time\n' +
+            ''.join(f'{tid},{sid},{i+1},{time}\n' for tid, service, direction, headsign, note, time, path in specs
+                    for i, sid in enumerate(path)), encoding='utf-8')
+        return line_details(load_snapshot(root), 'R')
+
     def setUp(self):
         self.temp = TemporaryDirectory()
         root = Path(self.temp.name)
@@ -108,6 +132,47 @@ class LineTests(unittest.TestCase):
         self.assertEqual(loop['stops'][0]['id'], loop['stops'][2]['id'])
         self.assertEqual((loop['stops'][0]['pickup_allowed'], loop['stops'][0]['dropoff_allowed']), (True, False))
         self.assertEqual((loop['stops'][2]['pickup_allowed'], loop['stops'][2]['dropoff_allowed']), (False, True))
+
+    def test_departure_notes_headsigns_and_time_collisions_are_preserved(self):
+        data = self._trip_variant_feed()
+        tables = next(g for g in data['direction_timetables'] if g['direction_id'] == '0')['timetables']
+        weekday = next(t for t in tables if t['service_id'] == 'W')
+        trips = {trip['trip_id']: trip for trip in weekday['trips']}
+        conditions = {c['id']: c['explanation'] for c in data['conditions']}
+        self.assertIsNone(trips['R1']['condition_id'])
+        self.assertEqual(len([t for t in weekday['trips'] if t['time'] == '08:00:00']), 2)
+        self.assertIn('Sefer tabelası: Otogar', conditions[trips['HEAD']['condition_id']])
+        self.assertNotIn('Sadece', conditions[trips['HEAD']['condition_id']])
+        self.assertEqual(trips['NOTE']['time'], '26:00:00')
+        self.assertEqual(conditions[trips['NOTE']['condition_id']], 'VADİKENT GİDER.')
+        self.assertNotIn('#2150de', str(data['conditions']))
+        self.assertNotIn('MISSING', trips)
+        sunday = next(t for t in tables if t['service_id'] == 'S')
+        self.assertEqual(sunday['trips'][0]['condition_id'], trips['NOTE']['condition_id'])
+
+    def test_short_turn_and_alternate_paths_link_to_correct_map_variants(self):
+        data = self._trip_variant_feed()
+        trips = {trip['trip_id']: trip for group in data['direction_timetables']
+                 for table in group['timetables'] for trip in table['trips']}
+        conditions = {c['id']: c['explanation'] for c in data['conditions']}
+        self.assertIn('Sadece Otogar durağına kadar gider.', conditions[trips['SHORT']['condition_id']])
+        self.assertIn('Alternatif güzergâh', conditions[trips['ALT']['condition_id']])
+        short_path = next(v for v in data['variants'] if v['id'] == trips['SHORT']['variant_id'])
+        self.assertEqual([s['name'] for s in short_path['stops']], ['İskele', 'Otogar'])
+        alternate = next(v for v in data['variants'] if v['id'] == trips['ALT']['variant_id'])
+        self.assertEqual([s['name'] for s in alternate['stops']], ['İskele', 'Hastane', 'Merkez'])
+        self.assertIsNone(trips['BACK']['condition_id'])
+
+    def test_regular_line_has_no_special_legend_conditions(self):
+        self.assertEqual(line_details(self.snapshot, 'R')['conditions'], [])
+
+    def test_unknown_directions_do_not_mix_unrelated_path_timetables(self):
+        self._trip_variant_feed()
+        root = Path(self.temp.name)
+        path = root / 'trips.txt'
+        path.write_text(path.read_text(encoding='utf-8').replace(',0,', ',,').replace(',1,', ',,'), encoding='utf-8')
+        data = line_details(load_snapshot(root), 'R')
+        self.assertTrue(all(len(group['variant_ids']) == 1 for group in data['direction_timetables']))
 
 
 if __name__ == '__main__':

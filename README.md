@@ -29,6 +29,8 @@ Saatler aynı Kocaeli GTFS kaynağının `stop_times` tablosunda ilk duraktan ka
 
 Yön/güzergâh menüsü yalnızca farklı yolları seçer. Aynı yolun tüm tarifeleri **Hafta İçi**, **Cumartesi** ve **Pazar** bölümlerinde birlikte gösterilir; ayrı gün seçimi gerekmez.
 
+Saatler seçili yöndeki tüm güzergâhları kapsar. `trip_headsign` ve Kocaeli'nin `trip_short_name` açıklamaları her kalkışla birlikte saklanır; açıklamalardaki `#rrggbb` renk ekleri temizlenir. En sık kullanılan, özel işaretlenmemiş güzergâh referans alınarak farklı tabelalar, son duraklar, durak dizileri/şekilleri ve izinler tespit edilir. Kısa sefer açıklaması yalnızca durak dizisi referansın başlangıç kısmıyla tam eşleşiyorsa üretilir; bilinmeyen yönler birleştirilmez. API'nin `direction_timetables` ve `conditions` alanları renkli/numaralı saatleri ve **Açıklama** anahtarını besler. Her numara aynı koşulu belirtir; özel saate dokunmak o seferin mevcut GTFS duraklarını ve haritasını seçer. Aynı saatte farklı koşullar korunur; eksik saatler oluşturulmaz. Bu veriler statiktir, canlı sefer iptalleri veya takvim istisnaları içermez.
+
 ## Vercel
 
 Kök dizini proje kökü olarak seçin. `public/` statik dosyaları CDN'den sunulur. Vercel'deki `/api/chat` isteği `vercel.json` ile uygulamanın `/chat` yoluna eşlenir; yerel FastAPI uygulaması her iki yolu da kabul eder. `/api/health` veri grafiğinin yüklenip yüklenmediğini gösterir. GTFS dosyası kodun bulunduğu dizine göre yüklenir; çalışma dizinine veya dış ağa bağımlı değildir. İlk soğuk istekte veri grafiğinin kurulması birkaç saniye sürebilir.

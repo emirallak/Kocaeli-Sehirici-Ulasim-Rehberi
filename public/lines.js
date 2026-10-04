@@ -78,6 +78,11 @@
   function renderVariant() {
     const variant = line.variants[Number($('line-variant').value)];
     const tables = $('line-timetables'); tables.replaceChildren();
+    const direction = (line.direction_timetables || []).find(group => group.variant_ids.includes(variant.id));
+    const schedules = direction?.timetables || variant.timetables;
+    const conditions = new Map((line.conditions || []).map((condition, index) => [condition.id,
+      {...condition, ...LineDisplay.conditionStyle(index)}]));
+    const usedConditions = new Set();
     const categories = [
       {name: 'Hafta İçi', days: [0, 1, 2, 3, 4]},
       {name: 'Cumartesi', days: [5]},
@@ -86,7 +91,7 @@
     for (const category of categories) {
       const section = element('section', undefined, 'line-schedule');
       section.append(element('h4', category.name));
-      const matching = variant.timetables.filter(table => table.operating_days.some(day => category.days.includes(day)));
+      const matching = schedules.filter(table => table.operating_days.some(day => category.days.includes(day)));
       if (!matching.length) section.append(element('p', 'Bu gün için veride sefer tarifesi bulunmuyor.', 'line-note'));
       for (const table of matching) {
         const actualDays = table.operating_days.filter(day => category.days.includes(day));
@@ -94,19 +99,53 @@
         const format = value => value ? new Intl.DateTimeFormat('tr-TR').format(new Date(`${value}T12:00:00+03:00`)) : 'Belirtilmemiş';
         section.append(element('p', `Tarife geçerliliği: ${format(table.start_date)} – ${format(table.end_date)}`, 'line-note'));
         const times = element('div', undefined, 'line-times');
-        table.departures.forEach(time => {
-          const display = LineDisplay.departure(time);
-          const entry = element('span', display.label);
-          if (display.dayOffset) {
-            entry.title = `${display.label} · Tarife gününden ${display.dayOffset} gün sonra`;
-            entry.setAttribute('aria-label', entry.title);
+        const departures = table.trips?.length ? table.trips : table.departures.map(time => ({time}));
+        departures.forEach(trip => {
+          const display = LineDisplay.departure(trip.time);
+          const condition = conditions.get(trip.condition_id);
+          const entry = element(condition ? 'button' : 'span', display.label, 'trip-time');
+          const description = [display.label];
+          if (display.dayOffset) description.push(`Tarife gününden ${display.dayOffset} gün sonra`);
+          if (condition) {
+            usedConditions.add(condition.id);
+            entry.type = 'button';
+            entry.style.backgroundColor = condition.background;
+            entry.style.color = condition.foreground;
+            entry.append(element('sup', condition.number, 'trip-key'));
+            description.push(`${condition.number}. ${condition.explanation}`, 'Seferin güzergâhını haritada göster');
+            entry.setAttribute('aria-describedby', `legend-${condition.id}`);
+            entry.addEventListener('click', () => {
+              const index = line.variants.findIndex(path => path.id === trip.variant_id);
+              if (index < 0) return;
+              $('line-variant').value = String(index);
+              renderVariant();
+              $('line-map').scrollIntoView({behavior: 'smooth', block: 'nearest'});
+            });
           }
+          entry.title = description.join(' · ');
+          entry.setAttribute('aria-label', entry.title);
           times.append(entry);
         });
         section.append(times);
         if (!table.departures.length) section.append(element('p', 'Bu güzergâh için kalkış saatleri veride bulunmuyor.', 'line-note'));
       }
       tables.append(section);
+    }
+    const legend = $('line-legend'); legend.replaceChildren();
+    legend.hidden = usedConditions.size === 0;
+    if (usedConditions.size) {
+      legend.append(element('h4', 'Açıklama'));
+      const list = element('ul', undefined, 'trip-legend-list');
+      for (const condition of conditions.values()) {
+        if (!usedConditions.has(condition.id)) continue;
+        const item = element('li'); item.id = `legend-${condition.id}`;
+        const key = element('span', condition.number, 'trip-legend-key');
+        key.style.backgroundColor = condition.background;
+        key.style.color = condition.foreground;
+        key.setAttribute('aria-hidden', 'true');
+        item.append(key, element('span', condition.explanation)); list.append(item);
+      }
+      legend.append(list, element('p', 'Numaralı saatlere dokunarak o seferin duraklarını ve güzergâhını görüntüle.', 'line-note'));
     }
     $('line-stop-heading').textContent = `Duraklar · ${variant.stops.length}`;
     $('line-stops').replaceChildren();

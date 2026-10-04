@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import re
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ from api.app.schemas.snapshot import (
     Stop,
     StopId,
     Weekday,
+    TripDeparture,
     read_only_mapping,
 )
 
@@ -60,13 +62,14 @@ def _load_feed(root: Path) -> RoutingSnapshot:
     calendars = _load_calendars(_find_feed_file(root, "calendar"))
     routes = _load_routes(_find_feed_file(root, "routes"))
     stops, stop_id_by_gtfs_id = _load_stops(_find_feed_file(root, "stops"))
-    trips = _load_trips(_find_feed_file(root, "trips"), routes, calendars)
+    trip_notes: dict[str, tuple[str, bool]] = {}
+    trips = _load_trips(_find_feed_file(root, "trips"), routes, calendars, trip_notes)
     departure_times: dict[str, str] = {}
     trip_stops = _load_trip_stop_sequences(
         _find_feed_file(root, "stop_times"), trips, stop_id_by_gtfs_id, departure_times
     )
     shapes = _load_shapes(root)
-    patterns = _make_patterns(trips, trip_stops, calendars, routes, stops, shapes, departure_times)
+    patterns = _make_patterns(trips, trip_stops, calendars, routes, stops, shapes, departure_times, trip_notes)
     routes = {
         route_id: route for route_id, route in routes.items()
         if route.route_type is None or route.route_type in (0, 3)
@@ -267,10 +270,12 @@ class PatternMetadata(TypedDict):
     service_ids: set[str]
     headsigns: set[str]
     departures: set[tuple[str, str]]
+    trip_departures: set[TripDeparture]
 
 
 def _load_trips(
-    path: Path, routes: dict[str, Route], calendars: dict[str, ServiceCalendar]
+    path: Path, routes: dict[str, Route], calendars: dict[str, ServiceCalendar],
+    trip_notes: dict[str, tuple[str, bool]] | None = None,
 ) -> dict[str, Trip]:
     trips: dict[str, Trip] = {}
     for line_number, row in enumerate(_rows(path), start=2):
@@ -292,6 +297,11 @@ def _load_trips(
             row.get("trip_headsign") or None,
             row.get("shape_id") or None,
         )
+        if trip_notes is not None:
+            raw_note = row.get("trip_short_name", "")
+            flagged = bool(re.search(r"#[0-9a-fA-F]{6}\s*$", raw_note))
+            note = re.sub(r"#[0-9a-fA-F]{6}\s*$", "", raw_note).rstrip("#").strip()
+            trip_notes[trip_id] = (note, flagged)
     return trips
 
 
@@ -354,13 +364,14 @@ def _make_patterns(
     stops: dict[StopId, Stop],
     shapes: dict[str, tuple[tuple[tuple[float, float], ...], tuple[float, ...]]],
     departure_times: dict[str, str] | None = None,
+    trip_notes: dict[str, tuple[str, bool]] | None = None,
 ) -> dict[PatternId, Pattern]:
     # A pattern keeps its own boarding/alighting flags; trips with the same
     # stops but different restrictions must never be merged.
     groups: dict[
         tuple[str, str | None, str | None, tuple[StopId, ...], tuple[bool, ...], tuple[bool, ...], frozenset[Weekday]],
         PatternMetadata,
-    ] = defaultdict(lambda: {"service_ids": set(), "headsigns": set(), "departures": set()})
+    ] = defaultdict(lambda: {"service_ids": set(), "headsigns": set(), "departures": set(), "trip_departures": set()})
     for trip_id, (route_id, direction_id, service_id, headsign, shape_id) in trips.items():
         stop_data = trip_stops.get(trip_id)
         if stop_data is None:
@@ -378,6 +389,9 @@ def _make_patterns(
         group["service_ids"].add(service_id)
         if departure_times and trip_id in departure_times:
             group["departures"].add((service_id, departure_times[trip_id]))
+            note, flagged = (trip_notes or {}).get(trip_id, ("", False))
+            group["trip_departures"].add(TripDeparture(
+                trip_id, service_id, departure_times[trip_id], headsign or "", note, flagged))
         if headsign:
             group["headsigns"].add(headsign)
 
@@ -422,5 +436,6 @@ def _make_patterns(
             metres_at_stop=distances_by_path[distance_key][0],
             shape_usable=distances_by_path[distance_key][1],
             departures=tuple(sorted(metadata["departures"])),
+            trip_departures=tuple(sorted(metadata["trip_departures"], key=lambda trip: (trip.time, trip.trip_id))),
         )
     return patterns

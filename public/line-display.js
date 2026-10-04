@@ -1,5 +1,9 @@
 /* Preserve service-day ordering in the API; format only the visible clock. */
 const LineDisplay = {
+  conditionStyle(index) {
+    const hue = Math.round((index * 137.508 + 340) % 360);
+    return {background: `hsl(${hue} 60% 94%)`, foreground: `hsl(${hue} 65% 24%)`, number: index + 1};
+  },
   departure(time) {
     const match = /^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/.exec(String(time));
     if (!match) return {label: '—', dayOffset: 0};

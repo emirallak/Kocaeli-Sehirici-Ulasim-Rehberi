@@ -61,6 +61,16 @@ class ServiceCalendar:
 
 
 @dataclass(frozen=True, slots=True)
+class TripDeparture:
+    trip_id: str
+    service_id: str
+    time: str
+    headsign: str = ""
+    note: str = ""
+    flagged: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Pattern:
     """One route/direction/stop-sequence/service-days/boarding-rule combination."""
 
@@ -88,6 +98,7 @@ class Pattern:
     shape_usable: bool = False
     # Scheduled departures from the first stop, paired with their calendar ID.
     departures: tuple[tuple[str, str], ...] = ()
+    trip_departures: tuple[TripDeparture, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
