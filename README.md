@@ -4,6 +4,8 @@ Kocaeli otobüs ve tramvay güzergâhlarını statik GTFS verisiyle karşılaşt
 
 ## Yerel çalıştırma
 
+Windows'ta bağımlılıklar kurulduktan sonra kökteki `start.bat` dosyasını çift tıklayarak uygulamayı başlatabilirsiniz. Betik önce `.venv` / `venv` Python'unu, ardından sistem Python'unu kullanır; sunucu günlükleri aynı CMD penceresinde kalır. `Ctrl+C` veya pencereyi kapatma ile durdurulur; hata veya normal çıkışta `pause` pencereyi açık tutar. Varsayılan adres `http://127.0.0.1:8000/` olur (`KOCAELI_PORT` ile port değiştirilebilir).
+
 Python 3.13 ile:
 
 ```sh
@@ -18,6 +20,14 @@ uvicorn api.index:app --reload
 ```sh
 python -m unittest discover -s tests
 ```
+
+## Hat bilgileri
+
+`/line-info` sayfası (menüde **Hat bilgileri**), hat numarası veya adıyla arama, yön/güzergâh seçimi, sıralı duraklar ve Leaflet haritası sunar. `/api/lines` hat kataloğunu, `/api/lines/{route_id}` seçilen hattın güzergâhlarını döndürür; Vercel için `/lines` ve `/lines/{route_id}` API eşdeğerleri vardır. Yerel ve Vercel sayfa yönlendirmeleri desteklenir.
+
+Saatler aynı Kocaeli GTFS kaynağının `stop_times` tablosunda ilk duraktan kalkış saatleridir. Her güzergâhın hizmet günleri ve takvim geçerlilik tarihleri gösterilir; 24:00 üzerindeki saatler korunur. Eksik saatler tahmin edilmez. Şekil verisi varsa tam güzergâh çizilir; yoksa duraklar arası yaklaşık çizgi açıkça belirtilir. Rota planlayıcı mevcut tahmini süre modelini kullanmaya devam eder.
+
+Yön/güzergâh menüsü yalnızca farklı yolları seçer. Aynı yolun tüm tarifeleri **Hafta İçi**, **Cumartesi** ve **Pazar** bölümlerinde birlikte gösterilir; ayrı gün seçimi gerekmez.
 
 ## Vercel
 

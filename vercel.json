@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/line-info",
+      "destination": "/lines.html"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/:path*"
     }

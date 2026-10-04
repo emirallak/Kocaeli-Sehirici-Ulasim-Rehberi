@@ -7,7 +7,7 @@ import gzip
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, TypedDict
 
 from api.app.data.indexes import build_indexes
 from api.app.data.geometry import cumulative_shape_metres, stop_chain_metres, stops_on_shape_metres
@@ -61,11 +61,12 @@ def _load_feed(root: Path) -> RoutingSnapshot:
     routes = _load_routes(_find_feed_file(root, "routes"))
     stops, stop_id_by_gtfs_id = _load_stops(_find_feed_file(root, "stops"))
     trips = _load_trips(_find_feed_file(root, "trips"), routes, calendars)
+    departure_times: dict[str, str] = {}
     trip_stops = _load_trip_stop_sequences(
-        _find_feed_file(root, "stop_times"), trips, stop_id_by_gtfs_id
+        _find_feed_file(root, "stop_times"), trips, stop_id_by_gtfs_id, departure_times
     )
     shapes = _load_shapes(root)
-    patterns = _make_patterns(trips, trip_stops, calendars, routes, stops, shapes)
+    patterns = _make_patterns(trips, trip_stops, calendars, routes, stops, shapes, departure_times)
     routes = {
         route_id: route for route_id, route in routes.items()
         if route.route_type is None or route.route_type in (0, 3)
@@ -262,6 +263,12 @@ def _load_stops(path: Path) -> tuple[dict[StopId, Stop], dict[str, StopId]]:
 Trip = tuple[str, str | None, str, str | None, str | None]
 
 
+class PatternMetadata(TypedDict):
+    service_ids: set[str]
+    headsigns: set[str]
+    departures: set[tuple[str, str]]
+
+
 def _load_trips(
     path: Path, routes: dict[str, Route], calendars: dict[str, ServiceCalendar]
 ) -> dict[str, Trip]:
@@ -289,11 +296,13 @@ def _load_trips(
 
 
 def _load_trip_stop_sequences(
-    path: Path, trips: dict[str, Trip], stop_id_by_gtfs_id: dict[str, StopId]
+    path: Path, trips: dict[str, Trip], stop_id_by_gtfs_id: dict[str, StopId],
+    departure_times: dict[str, str] | None = None,
 ) -> dict[str, tuple[tuple[StopId, bool, bool], ...]]:
     # The ordinal is a deterministic tie breaker for non-conformant feeds that
     # repeat a stop_sequence value.
     rows_by_trip: dict[str, list[tuple[int, int, StopId, bool, bool]]] = defaultdict(list)
+    first_departures: dict[str, tuple[int, str]] = {}
     for ordinal, row in enumerate(_rows(path)):
         context = f"{path}:{ordinal + 2}"
         trip_id = _required(row, "trip_id", context)
@@ -313,6 +322,10 @@ def _load_trip_stop_sequences(
             row.get("pickup_type", "0") in ("", "0"),
             row.get("drop_off_type", "0") in ("", "0"),
         ))
+        if departure_times is not None:
+            previous = first_departures.get(trip_id)
+            if previous is None or sequence < previous[0]:
+                first_departures[trip_id] = (sequence, row.get("departure_time", ""))
 
     trip_stops: dict[str, tuple[tuple[StopId, bool, bool], ...]] = {}
     for trip_id in trips:
@@ -322,6 +335,13 @@ def _load_trip_stop_sequences(
             # A trip without topology cannot contribute to a routing graph.
             continue
         entries.sort(key=lambda entry: (entry[0], entry[1]))
+        if departure_times is not None:
+            time = first_departures[trip_id][1]
+            parts = time.split(":")
+            if (len(parts) == 3 and all(part.isdigit() for part in parts)
+                    and 0 <= int(parts[0]) <= 99
+                    and int(parts[1]) < 60 and int(parts[2]) < 60):
+                departure_times[trip_id] = f"{int(parts[0]):02d}:{int(parts[1]):02d}:{int(parts[2]):02d}"
         trip_stops[trip_id] = tuple((entry[2], entry[3], entry[4]) for entry in entries)
     return trip_stops
 
@@ -333,13 +353,14 @@ def _make_patterns(
     routes: dict[str, Route],
     stops: dict[StopId, Stop],
     shapes: dict[str, tuple[tuple[tuple[float, float], ...], tuple[float, ...]]],
+    departure_times: dict[str, str] | None = None,
 ) -> dict[PatternId, Pattern]:
     # A pattern keeps its own boarding/alighting flags; trips with the same
     # stops but different restrictions must never be merged.
     groups: dict[
         tuple[str, str | None, str | None, tuple[StopId, ...], tuple[bool, ...], tuple[bool, ...], frozenset[Weekday]],
-        dict[str, set[str]],
-    ] = defaultdict(lambda: {"service_ids": set(), "headsigns": set()})
+        PatternMetadata,
+    ] = defaultdict(lambda: {"service_ids": set(), "headsigns": set(), "departures": set()})
     for trip_id, (route_id, direction_id, service_id, headsign, shape_id) in trips.items():
         stop_data = trip_stops.get(trip_id)
         if stop_data is None:
@@ -355,13 +376,15 @@ def _make_patterns(
         dropoff_allowed = tuple(item[2] for item in stop_data)
         group = groups[(route_id, direction_id, shape_id, stop_ids, pickup_allowed, dropoff_allowed, operating_days)]
         group["service_ids"].add(service_id)
+        if departure_times and trip_id in departure_times:
+            group["departures"].add((service_id, departure_times[trip_id]))
         if headsign:
             group["headsigns"].add(headsign)
 
     def sort_key(
         item: tuple[
             tuple[str, str | None, str | None, tuple[StopId, ...], tuple[bool, ...], tuple[bool, ...], frozenset[Weekday]],
-            dict[str, set[str]],
+            PatternMetadata,
         ]
     ) -> tuple[str, str, str, tuple[int, ...], tuple[bool, ...], tuple[bool, ...], tuple[int, ...]]:
         (route_id, direction_id, shape_id, stop_ids, pickup, dropoff, days), _ = item
@@ -398,5 +421,6 @@ def _make_patterns(
             shape_metres=shape_metres,
             metres_at_stop=distances_by_path[distance_key][0],
             shape_usable=distances_by_path[distance_key][1],
+            departures=tuple(sorted(metadata["departures"])),
         )
     return patterns

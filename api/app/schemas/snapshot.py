@@ -86,6 +86,8 @@ class Pattern:
     shape_metres: tuple[float, ...] = ()
     metres_at_stop: tuple[float, ...] = ()
     shape_usable: bool = False
+    # Scheduled departures from the first stop, paired with their calendar ID.
+    departures: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

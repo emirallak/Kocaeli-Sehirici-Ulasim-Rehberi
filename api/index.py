@@ -13,9 +13,11 @@ from threading import Lock
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from api.app.api.stops import StopNameIndex, build_stop_catalog, build_stop_name_index, normalize_text, resolve_stop_ids
+from api.app.api.lines import line_catalog, line_details
 from api.app.chat.intent import extract_trip_intent
 from api.app.data.loader import GTFSLoadError, load_snapshot
 from api.app.data.transport import public_line_code
@@ -183,6 +185,26 @@ def stops(q: str = Query(default="", max_length=200),
     return {"stops": matches[:limit]}
 
 
+@app.get("/api/lines")
+@app.get("/lines", include_in_schema=False)
+def lines(q: str = Query(default="", max_length=200)) -> dict:
+    snapshot, _ = _state()
+    catalog = line_catalog(snapshot)
+    query = normalize_text(q)
+    return {"lines": [line for line in catalog
+                      if not query or query in normalize_text(f'{line["code"]} {line["name"]}') ]}
+
+
+@app.get("/api/lines/{route_id}")
+@app.get("/lines/{route_id}", include_in_schema=False)
+def get_line(route_id: str) -> dict:
+    snapshot, _ = _state()
+    try:
+        return line_details(snapshot, route_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Hat bulunamadı") from None
+
+
 def _resolve_query(query, stop_name_index, indexes):
     """Try the stop name before municipality text used by map search boxes."""
     name = query.get("name", "")
@@ -337,4 +359,8 @@ def _leg_geometry(snapshot: RoutingSnapshot, leg: Leg) -> list[dict[str, float]]
 # Vercel serves public/ from its CDN. Keep a same-origin local development
 # server so the browser can call /api/chat without a separate proxy.
 if not os.getenv("VERCEL") and os.path.isdir(PUBLIC_DIR):
+    @app.get("/line-info", include_in_schema=False)
+    def line_page():
+        return FileResponse(os.path.join(PUBLIC_DIR, "lines.html"))
+
     app.mount("/", StaticFiles(directory=PUBLIC_DIR, html=True), name="public")

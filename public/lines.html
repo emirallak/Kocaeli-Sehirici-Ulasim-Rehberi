@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1b38">
+  <title>Hat Bilgileri · Kocaeli Rota</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="/lines.js" defer></script>
+</head>
+<body>
+  <main class="page">
+    <header class="brand"><span class="brand-mark">K</span><span>KOCAELİ ROTA<small>AKILLI ULAŞIM ASİSTANI</small></span></header>
+    <nav class="page-nav" aria-label="Ana menü"><a href="/">Rota bul</a><a href="/line-info" aria-current="page">Hat bilgileri</a></nav>
+    <section class="hero"><div class="eyebrow">KOCAELİ HAT REHBERİ</div><h1>Hattını tanı.<br>Yolunu gör.</h1><p>Otobüs ve tramvay hatlarının kalkış saatlerini, duraklarını ve tüm güzergâhını keşfet.</p></section>
+    <section class="search-panel" aria-labelledby="line-search-heading">
+      <div class="panel-heading"><h2 id="line-search-heading">Hangi hat?</h2><p>Hat numarası veya güzergâh adıyla ara.</p></div>
+      <div class="stop-field line-search"><label for="line-search">Hat seçimi</label><input id="line-search" type="text" placeholder="Örn. 100 veya Otogar" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="line-options" aria-describedby="line-search-status"><ul id="line-options" class="stop-options" role="listbox" aria-label="Hatlar" hidden></ul><span id="line-search-status" class="stop-status" role="status"></span></div>
+    </section>
+    <div id="line-status" class="empty-panel" role="status">Bir hat seçerek saatleri ve güzergâhı görüntüle.</div>
+    <button id="line-retry" class="line-retry" type="button" hidden>Yeniden dene</button>
+    <section id="line-details" class="results" aria-labelledby="line-title" hidden>
+      <div class="result-heading"><div><h2 id="line-title"></h2><p id="line-description"></p></div><span>Statik sefer tarifesi · Türkiye saati</span></div>
+      <div class="journey-card"><label for="line-variant">Yön ve güzergâh</label><select id="line-variant"></select><p class="line-note">Her yönün ve alternatif güzergâhın durakları ile saatleri ayrı gösterilir.</p></div>
+      <div class="line-layout">
+        <div><article class="journey-card"><h3>Saatler</h3><p class="line-note">İlk duraktan kalkış saatleri. 24:00 ve sonrası, hizmet gününü izleyen geceyi belirtir. Canlı sefer bilgisi değildir.</p><div id="line-timetables"></div></article><article class="journey-card"><h3 id="line-stop-heading">Duraklar</h3><ol id="line-stops" class="line-timeline"></ol></article></div>
+        <article class="journey-card line-map-card"><h3>Güzergâh haritası</h3><p id="line-map-note" class="line-note"></p><div id="line-map" class="map line-map" aria-label="Seçilen hattın güzergâhı ve durakları"></div></article>
+      </div>
+    </section>
+    <footer>Kocaeli Rota · Kocaeli GTFS verisi kullanılır. Sefer tarifeleri güncel operasyon değişikliklerini yansıtmayabilir.</footer>
+  </main>
+</body>
+</html>
