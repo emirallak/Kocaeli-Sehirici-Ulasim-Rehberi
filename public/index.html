@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="/app.js" defer></script>
+  <script src="/autocomplete.js" defer></script>
 </head>
 <body>
   <main class="page">
@@ -32,8 +33,8 @@
       <div class="panel-heading"><h2 id="search-heading">Nereye gidiyorsun?</h2><p>Kalkış ve varış durağını yaz, sana uygun üç rotayı karşılaştır.</p></div>
       <form id="route-form">
         <div class="field-grid">
-          <label>Kalkış durağı<input id="origin" name="origin" type="text" placeholder="Örn. Kuruçeşme Işıklar" autocomplete="off" required></label>
-          <label>Varış durağı<input id="destination" name="destination" type="text" placeholder="Örn. Yeni Cuma Doğu" autocomplete="off" required></label>
+          <div class="stop-field"><label for="origin">Kalkış durağı</label><input id="origin" name="origin" type="text" placeholder="Örn. Kuruçeşme Işıklar" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="origin-options" aria-describedby="origin-status" required><ul id="origin-options" class="stop-options" role="listbox" aria-label="Kalkış durakları" hidden></ul><span id="origin-status" class="stop-status" role="status"></span></div>
+          <div class="stop-field"><label for="destination">Varış durağı</label><input id="destination" name="destination" type="text" placeholder="Örn. Yeni Cuma Doğu" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="destination-options" aria-describedby="destination-status" required><ul id="destination-options" class="stop-options" role="listbox" aria-label="Varış durakları" hidden></ul><span id="destination-status" class="stop-status" role="status"></span></div>
         </div>
         <div class="form-actions">
           <label class="filter-label">Rota filtresi

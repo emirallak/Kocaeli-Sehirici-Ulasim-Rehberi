@@ -18,6 +18,16 @@ StopNameIndex = Mapping[str, Mapping[str, tuple[StopId, ...]]]
 logger = logging.getLogger(__name__)
 
 
+def build_stop_catalog(indexes: RoutingIndexes) -> tuple[dict[str, str], ...]:
+    """Group active directional platforms into compact name/district entries."""
+    catalog = {}
+    for stop_id, stop in indexes.stops.items():
+        if indexes.routes_at_stop[stop_id]:
+            key = (normalize_text(stop.name), normalize_text(stop.district))
+            catalog.setdefault(key, {"name": stop.name, "district": stop.district})
+    return tuple(catalog[key] for key in sorted(catalog))
+
+
 def normalize_text(value: str) -> str:
     """Normalize Turkish text for case/accent-insensitive name comparisons."""
 

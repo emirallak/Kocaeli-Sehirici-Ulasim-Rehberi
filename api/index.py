@@ -11,11 +11,11 @@ from bisect import bisect_left, bisect_right
 from functools import lru_cache
 from threading import Lock
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from api.app.api.stops import StopNameIndex, build_stop_name_index, normalize_text, resolve_stop_ids
+from api.app.api.stops import StopNameIndex, build_stop_catalog, build_stop_name_index, normalize_text, resolve_stop_ids
 from api.app.chat.intent import extract_trip_intent
 from api.app.data.loader import GTFSLoadError, load_snapshot
 from api.app.data.transport import public_line_code
@@ -60,6 +60,7 @@ def _install_snapshot(snapshot: RoutingSnapshot) -> None:
     app.state.snapshot = snapshot
     app.state.load_error = None
     app.state.stop_name_index = stop_name_index
+    app.state.stop_catalog = (snapshot, build_stop_catalog(snapshot.indexes))
     @lru_cache(maxsize=64)
     def plan(origins, destinations, limit, routing_mode):
         counts = {}
@@ -157,6 +158,29 @@ def chat(request: ChatRequest) -> dict[str, object]:
 def health() -> dict[str, int | str]:
     snapshot, _ = _state()
     return {"status": "ok", "stops": len(snapshot.stops), "patterns": len(snapshot.patterns)}
+
+
+@app.get("/api/stops")
+@app.get("/stops", include_in_schema=False)
+def stops(q: str = Query(default="", max_length=200),
+          limit: int = Query(default=12, ge=1, le=50)) -> dict[str, object]:
+    """Return a compact active-stop catalog, or ranked autocomplete matches.
+
+    An empty query returns the full catalog for instant browser-side filtering.
+    Directional platforms sharing a name/district appear as one suggestion.
+    """
+    snapshot, _ = _state()
+    cached = getattr(app.state, "stop_catalog", None)
+    if cached is None or cached[0] is not snapshot:
+        cached = (snapshot, build_stop_catalog(snapshot.indexes))
+        app.state.stop_catalog = cached
+    query = normalize_text(q)
+    if not query:
+        return {"stops": cached[1] if not q.strip() else []}
+    matches = [stop for stop in cached[1] if query in normalize_text(stop["name"])]
+    matches.sort(key=lambda stop: (not normalize_text(stop["name"]).startswith(query),
+                                   normalize_text(stop["name"]), stop["district"]))
+    return {"stops": matches[:limit]}
 
 
 def _resolve_query(query, stop_name_index, indexes):
