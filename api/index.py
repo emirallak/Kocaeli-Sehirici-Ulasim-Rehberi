@@ -25,6 +25,7 @@ from api.app.routing.reconstruct import reconstruct_itinerary
 from api.app.routing.metrics import itinerary_metres, leg_metres, itinerary_minutes, leg_minutes, BOARDING_WAIT_MINUTES
 from api.app.routing.metrics import RoutingMode
 from api.app.routing.search import best_routes
+from api.app.routing.grouping import matching_lines
 from api.app.schemas.itinerary import Itinerary, Leg
 from api.app.schemas.snapshot import RoutingSnapshot, Weekday
 
@@ -66,7 +67,7 @@ def _install_snapshot(snapshot: RoutingSnapshot) -> None:
     @lru_cache(maxsize=64)
     def plan(origins, destinations, limit, routing_mode):
         counts = {}
-        routes = best_routes(snapshot.indexes, origins, destinations, limit, counts, routing_mode)
+        routes = best_routes(snapshot.indexes, origins, destinations, limit, counts, routing_mode, group_paths=True)
         return routes, counts
     app.state.route_plan = (snapshot, plan)
 
@@ -121,7 +122,7 @@ def chat(request: ChatRequest) -> dict[str, object]:
     if cached is not None and cached[0] is snapshot:
         best, candidate_counts = cached[1](origin_ids, destination_ids, request.limit, request.routing_mode)
     else:
-        best = best_routes(indexes, origin_ids, destination_ids, request.limit, candidate_counts, request.routing_mode)
+        best = best_routes(indexes, origin_ids, destination_ids, request.limit, candidate_counts, request.routing_mode, group_paths=True)
     departure = datetime.now(timezone(timedelta(hours=3)))
     itineraries = [
         _itinerary_to_response(snapshot, reconstruct_itinerary(indexes, itinerary.legs), departure)
@@ -305,6 +306,7 @@ def _itinerary_to_response(snapshot: RoutingSnapshot, itinerary: Itinerary, depa
                 "mode": leg.mode,
                 "route_id": leg.route_id,
                 "route_code": public_line_code(leg.route_code or leg.route_id),
+                "line_options": _line_options(snapshot, leg, itinerary.operating_days),
                 "direction_id": leg.direction_id,
                 "headsigns": sorted(leg.headsigns),
                 "operating_days": _weekday_names(leg.operating_days),
@@ -327,6 +329,18 @@ def _itinerary_to_response(snapshot: RoutingSnapshot, itinerary: Itinerary, depa
             for leg in itinerary.legs
         ],
     }
+
+
+def _line_options(snapshot, leg, days):
+    return [{"route_code": group["code"], "mode": leg.mode,
+             "operating_days": _weekday_names(frozenset(group["days"])),
+             "patterns": [{"pattern_id": int(option.pattern_id), "route_id": option.route_id,
+                           "direction_id": option.direction_id, "board_index": option.board_index,
+                           "alight_index": option.alight_index,
+                           "headsigns": sorted(option.headsigns),
+                           "operating_days": _weekday_names(option.operating_days)}
+                          for option in group["legs"]]}
+            for group in matching_lines(snapshot.indexes, leg, days)]
 
 
 def _leg_geometry(snapshot: RoutingSnapshot, leg: Leg) -> list[dict[str, float]]:

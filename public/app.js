@@ -25,6 +25,15 @@ function minutes(value) {
   return `${Number(value) || 0} dk`;
 }
 
+function lineBadges(leg) {
+  const options = leg.line_options?.length ? leg.line_options : [{route_code: leg.route_code, mode: leg.mode}];
+  return options.map(option => {
+    const mode = option.mode === 'Tramvay' ? 'tram' : 'bus';
+    const headsigns = [...new Set((option.patterns || []).flatMap(pattern => pattern.headsigns || []))].join(' / ');
+    return `<span class="line-badge ${mode}" title="${escapeHtml([option.mode, headsigns].filter(Boolean).join(' · '))}">${icon(mode)} ${escapeHtml(option.route_code)}</span>`;
+  }).join('<span class="line-choice-separator" aria-hidden="true">/</span>');
+}
+
 function routeCard(route, index) {
   const legs = route.legs || [];
   const rides = legs.filter(leg => !leg.is_walking);
@@ -37,15 +46,14 @@ function routeCard(route, index) {
   const segments = legs.map(leg => {
     const duration = minutes(leg.estimated_duration_minutes);
     if (leg.is_walking) return `<span class="segment" aria-label="Yürüyüş">${icon('walk')} ${duration}</span>`;
-    const mode = leg.mode === 'Tramvay' ? 'tram' : 'bus';
-    return `<span class="segment"><span class="line-badge ${mode}" title="${escapeHtml(leg.mode)}">${icon(mode)} ${escapeHtml(leg.route_code)}</span> ${duration}</span>`;
+    return `<span class="segment"><span class="line-choices" aria-label="Bu adımda kullanılabilecek hatlar">${lineBadges(leg)}</span> ${duration}</span>`;
   }).join('<span class="segment-arrow" aria-hidden="true">›</span>');
   const origin = legs[0]?.board_stop?.name ?? '';
   const destination = legs.at(-1)?.alight_stop?.name ?? '';
   const transferStops = rides.slice(1).map(leg => `<br>Aktarma: ${escapeHtml(leg.board_stop?.name)}`).join('');
   const detailLegs = legs.map(leg => {
     const mode = leg.is_walking ? 'walk' : leg.mode === 'Tramvay' ? 'tram' : 'bus';
-    const title = leg.is_walking ? `${Number(leg.walking_metres) || 0} m yürüyüş` : `${escapeHtml(leg.route_code)} · ${escapeHtml(leg.mode)}`;
+    const title = leg.is_walking ? `${Number(leg.walking_metres) || 0} m yürüyüş` : `<span class="line-choices">${lineBadges(leg)}</span>`;
     return `<div class="leg"><span class="leg-icon">${icon(mode)}</span><div><div class="leg-title">${title}</div><div class="leg-meta">${escapeHtml(leg.board_stop?.name)} → ${escapeHtml(leg.alight_stop?.name)}<br>${minutes(leg.estimated_duration_minutes)}</div></div></div>`;
   }).join('');
   const distance = (Number(route.total_distance_metres || 0) / 1000).toLocaleString('tr-TR', {minimumFractionDigits: 1, maximumFractionDigits: 1});

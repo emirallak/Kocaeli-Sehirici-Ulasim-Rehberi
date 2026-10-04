@@ -9,6 +9,7 @@ claiming exhaustive timetable Pareto optimality. Four rides are supported.
 from dataclasses import dataclass
 
 from api.app.data.transport import public_line_code
+from api.app.routing.grouping import label_path
 from api.app.routing.metrics import (
     BOARDING_WAIT_MINUTES, DWELL_MINUTES_PER_STOP, FIRST_TRAM_BONUS_MINUTES,
     TRANSFER_COST, ride_minutes_per_metre, walking_cost,
@@ -105,7 +106,7 @@ def reconstruct(indexes, label):
     return Itinerary(tuple(reversed(legs)))
 
 
-def raptor_routes(indexes, origins, destinations, limit, counts, routing_mode="fewest_transfers"):
+def raptor_routes(indexes, origins, destinations, limit, counts, routing_mode="fewest_transfers", *, group_paths=False):
     width = max(WIDTH, min(limit * 2, 20))
     counts.update(direct=0, one_transfer=0, two_transfers=0, three_transfers=0,
                   rounds=0, route_scans=0, scanned_positions=0)
@@ -141,10 +142,11 @@ def raptor_routes(indexes, origins, destinations, limit, counts, routing_mode="f
         rank = label_rank(candidate, routing_mode)
         if worst_rank is not None and rank > worst_rank:
             return
-        old = answers.get(candidate.lines)
+        key = label_path(indexes, candidate) if group_paths else candidate.lines
+        old = answers.get(key)
         if old is not None and rank >= label_rank(old, routing_mode):
             return
-        answers[candidate.lines] = candidate
+        answers[key] = candidate
         if len(answers) > limit:
             worst = max(answers, key=lambda k: (label_rank(answers[k], routing_mode), k))
             del answers[worst]
