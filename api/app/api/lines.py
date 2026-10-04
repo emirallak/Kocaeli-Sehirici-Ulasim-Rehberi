@@ -24,10 +24,13 @@ def line_details(snapshot: RoutingSnapshot, route_id: str) -> dict:
     for pattern in snapshot.patterns.values():
         if pattern.route_id != route_id:
             continue
+        pickup = pattern.pickup_allowed or (True,) * len(pattern.stop_ids)
+        dropoff = pattern.dropoff_allowed or (True,) * len(pattern.stop_ids)
         stops = [{"id": int(stop.id), "name": stop.name, "code": stop.code,
                   "district": stop.district, "latitude": stop.latitude,
-                  "longitude": stop.longitude}
-                 for stop in (snapshot.stops[sid] for sid in pattern.stop_ids)]
+                  "longitude": stop.longitude,
+                  "pickup_allowed": pickup[position], "dropoff_allowed": dropoff[position]}
+                 for position, stop in enumerate(snapshot.stops[sid] for sid in pattern.stop_ids)]
         geometry = (pattern.shape_points if pattern.shape_usable and pattern.shape_points
                     else tuple((stop["latitude"], stop["longitude"]) for stop in stops
                                if stop["latitude"] is not None and stop["longitude"] is not None))
@@ -41,7 +44,10 @@ def line_details(snapshot: RoutingSnapshot, route_id: str) -> dict:
                                "start_date": calendar.start_date.isoformat() if calendar.start_date else None,
                                "end_date": calendar.end_date.isoformat() if calendar.end_date else None,
                                "departures": times})
-        path_key = (pattern.direction_id, pattern.stop_ids, pattern.shape_id, pattern.shape_usable)
+        # Never combine schedules whose stop permissions differ, even when
+        # their geometry matches. Permissions belong to each stop occurrence.
+        path_key = (pattern.direction_id, pattern.stop_ids, pattern.shape_id, pattern.shape_usable,
+                    pickup, dropoff)
         existing = variants_by_path.get(path_key)
         if existing is not None:
             for table in timetables:

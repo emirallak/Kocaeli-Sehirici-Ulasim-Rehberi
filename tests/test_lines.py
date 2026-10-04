@@ -77,6 +77,38 @@ class LineTests(unittest.TestCase):
                          if variant['direction_id'] == '0' and variant['geometry_source'] == 'stops')
         self.assertEqual(alternate['timetables'][0]['departures'], ['12:00:00'])
 
+    def test_restrictions_are_exposed_and_not_merged_with_unrestricted_trips(self):
+        root = Path(self.temp.name)
+        (root / 'stop_times.txt').write_text(
+            'trip_id,stop_id,stop_sequence,departure_time,pickup_type,drop_off_type\n'
+            'T1,A,1,08:00:00,0,1\nT1,B,2,08:20:00,1,0\n'
+            'T2,A,1,24:15:00,0,0\nT2,B,2,24:30:00,0,0\n'
+            'T3,B,1,,,\nT3,A,2,09:30:00,,\n', encoding='utf-8')
+        snapshot = load_snapshot(root)
+        with patch('api.index._state', return_value=(snapshot, {})):
+            data = TestClient(app).get('/api/lines/R').json()
+        self.assertEqual(len(data['variants']), 3)
+        restricted = next(v for v in data['variants'] if not v['stops'][0]['dropoff_allowed'])
+        self.assertEqual([(s['pickup_allowed'], s['dropoff_allowed']) for s in restricted['stops']],
+                         [(True, False), (False, True)])
+        self.assertEqual(restricted['timetables'][0]['departures'], ['08:00:00'])
+        unrestricted = next(v for v in data['variants']
+                            if v['direction_id'] == '0' and v['stops'][0]['dropoff_allowed'])
+        self.assertEqual(unrestricted['timetables'][0]['departures'], ['24:15:00'])
+
+    def test_loop_permissions_belong_to_each_stop_occurrence(self):
+        root = Path(self.temp.name)
+        (root / 'stop_times.txt').write_text(
+            'trip_id,stop_id,stop_sequence,departure_time,pickup_type,drop_off_type\n'
+            'T1,A,1,08:00:00,0,1\nT1,B,2,08:20:00,0,0\nT1,A,3,08:40:00,1,0\n'
+            'T2,A,1,24:15:00,0,0\nT2,B,2,24:30:00,0,0\n'
+            'T3,B,1,,,\nT3,A,2,09:30:00,,\n', encoding='utf-8')
+        variants = line_details(load_snapshot(root), 'R')['variants']
+        loop = next(v for v in variants if len(v['stops']) == 3)
+        self.assertEqual(loop['stops'][0]['id'], loop['stops'][2]['id'])
+        self.assertEqual((loop['stops'][0]['pickup_allowed'], loop['stops'][0]['dropoff_allowed']), (True, False))
+        self.assertEqual((loop['stops'][2]['pickup_allowed'], loop['stops'][2]['dropoff_allowed']), (False, True))
+
 
 if __name__ == '__main__':
     unittest.main()

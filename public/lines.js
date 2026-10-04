@@ -94,7 +94,15 @@
         const format = value => value ? new Intl.DateTimeFormat('tr-TR').format(new Date(`${value}T12:00:00+03:00`)) : 'Belirtilmemiş';
         section.append(element('p', `Tarife geçerliliği: ${format(table.start_date)} – ${format(table.end_date)}`, 'line-note'));
         const times = element('div', undefined, 'line-times');
-        table.departures.forEach(time => times.append(element('span', time.endsWith(':00') ? time.slice(0, -3) : time)));
+        table.departures.forEach(time => {
+          const display = LineDisplay.departure(time);
+          const entry = element('span', display.label);
+          if (display.dayOffset) {
+            entry.title = `${display.label} · Tarife gününden ${display.dayOffset} gün sonra`;
+            entry.setAttribute('aria-label', entry.title);
+          }
+          times.append(entry);
+        });
         section.append(times);
         if (!table.departures.length) section.append(element('p', 'Bu güzergâh için kalkış saatleri veride bulunmuyor.', 'line-note'));
       }
@@ -108,14 +116,20 @@
       button.addEventListener('click', () => {
         if (!map || stop.latitude == null || stop.longitude == null) return;
         map.setView([stop.latitude, stop.longitude], 16);
-        const popup = element('span', `${index + 1}. ${stop.name}`);
+        const popup = stopPopup(stop, index);
         L.popup().setLatLng([stop.latitude, stop.longitude]).setContent(popup).openOn(map);
         $('line-map').scrollIntoView({behavior: 'smooth', block: 'nearest'});
       });
-      item.append(button, element('small', [stop.code, stop.district].filter(Boolean).join(' · ')));
+      const row = element('div', undefined, 'line-stop-row');
+      row.append(button);
+      LineDisplay.restrictions(stop).forEach(label => row.append(element('span', label, 'stop-restriction')));
+      item.append(row, element('small', [stop.code, stop.district].filter(Boolean).join(' · ')));
       $('line-stops').append(item);
     });
     renderMap(variant);
+  }
+  function stopPopup(stop, index) {
+    return element('span', [`${index + 1}. ${stop.name}`, ...LineDisplay.restrictions(stop)].join(' · '));
   }
   function renderMap(variant) {
     $('line-map-note').textContent = variant.geometry_source === 'shape'
@@ -136,7 +150,7 @@
       if (!valid(stop)) return;
       const point = [stop.latitude, stop.longitude]; bounds.push(point);
       L.circleMarker(point, {radius: 6, color: '#163d7c', fillColor: '#fff', fillOpacity: 1, weight: 2})
-        .bindPopup(element('span', `${index + 1}. ${stop.name}`)).addTo(layers);
+        .bindPopup(stopPopup(stop, index)).addTo(layers);
     });
     map.invalidateSize();
     if (bounds.length) map.fitBounds(bounds, {padding: [24, 24], maxZoom: 15});

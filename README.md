@@ -25,7 +25,7 @@ python -m unittest discover -s tests
 
 `/line-info` sayfası (menüde **Hat bilgileri**), hat numarası veya adıyla arama, yön/güzergâh seçimi, sıralı duraklar ve Leaflet haritası sunar. `/api/lines` hat kataloğunu, `/api/lines/{route_id}` seçilen hattın güzergâhlarını döndürür; Vercel için `/lines` ve `/lines/{route_id}` API eşdeğerleri vardır. Yerel ve Vercel sayfa yönlendirmeleri desteklenir.
 
-Saatler aynı Kocaeli GTFS kaynağının `stop_times` tablosunda ilk duraktan kalkış saatleridir. Her güzergâhın hizmet günleri ve takvim geçerlilik tarihleri gösterilir; 24:00 üzerindeki saatler korunur. Eksik saatler tahmin edilmez. Şekil verisi varsa tam güzergâh çizilir; yoksa duraklar arası yaklaşık çizgi açıkça belirtilir. Rota planlayıcı mevcut tahmini süre modelini kullanmaya devam eder.
+Saatler aynı Kocaeli GTFS kaynağının `stop_times` tablosunda ilk duraktan kalkış saatleridir. Her güzergâhın hizmet günleri ve takvim geçerlilik tarihleri gösterilir. API hizmet günü sıralaması için GTFS saatlerini korur; arayüz 24:00 → 00:00, 26:00 → 02:00 biçiminde gösterir ve sonraki gün bilgisini saat açıklamasında belirtir. Eksik saatler tahmin edilmez. Durakların biniş/iniş izinleri API'de `pickup_allowed` / `dropoff_allowed` alanlarıyla sunulur; yasaklar **Binilmez** / **İnilmez** rozetleriyle durak listesinde ve harita açıklamasında gösterilir. İzinleri farklı seferler ayrı güzergâh seçeneklerinde tutulur. Şekil verisi varsa tam güzergâh çizilir; yoksa duraklar arası yaklaşık çizgi açıkça belirtilir. Rota planlayıcı mevcut tahmini süre modelini kullanmaya devam eder.
 
 Yön/güzergâh menüsü yalnızca farklı yolları seçer. Aynı yolun tüm tarifeleri **Hafta İçi**, **Cumartesi** ve **Pazar** bölümlerinde birlikte gösterilir; ayrı gün seçimi gerekmez.
 
