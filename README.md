@@ -33,7 +33,15 @@ Saatler seçili yöndeki tüm güzergâhları kapsar. `trip_headsign` ve Kocaeli
 
 ## Vercel
 
-Kök dizini proje kökü olarak seçin. `public/` statik dosyaları CDN'den sunulur. Vercel'deki `/api/chat` isteği `vercel.json` ile uygulamanın `/chat` yoluna eşlenir; yerel FastAPI uygulaması her iki yolu da kabul eder. `/api/health` veri grafiğinin yüklenip yüklenmediğini gösterir. GTFS dosyası kodun bulunduğu dizine göre yüklenir; çalışma dizinine veya dış ağa bağımlı değildir. İlk soğuk istekte veri grafiğinin kurulması birkaç saniye sürebilir.
+Kök dizini proje kökü olarak seçin. `public/` statik dosyaları CDN'den sunulur. Vercel'deki `/api/chat` isteği `vercel.json` ile uygulamanın `/chat` yoluna eşlenir; yerel FastAPI uygulaması her iki yolu da kabul eder. `/api/health` veri grafiğinin yüklenip yüklenmediğini gösterir. GTFS dosyası kodun bulunduğu dizine göre yüklenir; çalışma dizinine veya dış ağa bağımlı değildir.
+
+Soğuk başlangıçta veri grafiği CSV'den kurulmaz: `api/app/data/snapshot.pickle.xz` önceden kurulmuş grafiği tutar (yerelde ~0,5 sn, CSV'den ~10 sn). Dosya, ham GTFS dosyalarının ve yükleyici kaynak kodunun parmak iziyle doğrulanır; uyuşmazsa uygulama CSV'den kurar ve yazabildiği yerde önbelleği yeniler. GTFS verisini veya `api/app/data/` yükleyicisini değiştirdikten sonra önbelleği yeniden üretip commitleyin:
+
+```sh
+python -m api.app.data.cache
+```
+
+`/api/stops`, `/api/lines` ve `/api/lines/{id}` yanıtları `Cache-Control: s-maxage` ile Vercel CDN'inde önbelleğe alınır; Vercel her deploy'da bu önbelleği temizler. Ön uç istekleri zaman aşımı ve soğuk başlangıç için otomatik yeniden deneme içerir (`public/net.js`).
 
 Süre ve varış tahminleri ortalama hız, durak sayısı ve biniş başına varsayılan 5 dakika bekleme üzerinden hesaplanır. Canlı sefer ve trafik verisi içermez.
 
@@ -50,8 +58,10 @@ Veri modeli sefer saatleri içermediğinden bu sürüm zaman çizelgesi RAPTOR'u
 Ek kontroller:
 
 ```sh
-node --test tests/test_autocomplete.cjs
+node --test tests/*.cjs
 ```
+
+Arama sıcak döngüleri sonuçlar değişmeden hızlandırıldı: durak etiket kümeleri satır geçmişine göre sözlükle indekslenir, son turun varışları genişletilmez, hedefe kuş uçuşu kalan mesafeden türetilen alt sınır ve maliyetin hat boyunca yalnızca artması güvenli budama için kullanılır. Durak adı çözümlemesinde `difflib` yalnızca eşiği geçebilecek adaylar için çalışır. 100 rastgele sorgu × mod üzerinde API çıktısı öncekiyle birebir aynı kaldı; toplam süre 374 sn → 163 sn, durak çözümleme sorgu başına ~320 ms → ~37 ms (tek makine, gürültülü ölçüm).
 
 Yerel Kocaeli verisinde (8.511 durak, 2.161 güzergâh kalıbı), üç en az aktarmalı sorgu önceki aramayla aynı ilk üç hat seçeneğini verdi: sıcak veriyle önceki 9,6–10,0 saniye yerine 28–36 ms. Kuruçeşme Işıklar → Yeni Cuma Doğu sorgusunda diğer üç mod 0,54–0,94 saniye sürdü (önceki 9,5–10,4 saniye). Bunlar tek çalıştırma ölçümleridir; GTFS yükleme ve HTTP süreleri dahil değildir, performans garantisi değildir.
 
