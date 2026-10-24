@@ -6,10 +6,10 @@ The snapshot lacks timetables, so costs retain average speeds and assumed waits.
 Line-history bags preserve UI alternatives with a bounded width, rather than
 claiming exhaustive timetable Pareto optimality. Four rides are supported.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from api.app.data.transport import public_line_code
-from api.app.routing.grouping import label_path
+from api.app.routing.grouping import label_path, PathMatcher, ride_steps
 from api.app.routing.metrics import (
     BOARDING_WAIT_MINUTES, DWELL_MINUTES_PER_STOP, FIRST_TRAM_BONUS_MINUTES,
     TRANSFER_COST, ride_minutes_per_metre, walking_cost,
@@ -125,6 +125,8 @@ def raptor_routes(indexes, origins, destinations, limit, counts, routing_mode="f
             if neighbor in destinations and metres < egress.get(stop, (None, float('inf')))[1]:
                 egress[stop] = (neighbor, metres)
     answers = {}
+    matcher = PathMatcher(indexes) if group_paths else None
+    anchors = {}
 
     worst_rank = None
 
@@ -143,13 +145,21 @@ def raptor_routes(indexes, origins, destinations, limit, counts, routing_mode="f
         if worst_rank is not None and rank > worst_rank:
             return
         key = label_path(indexes, candidate) if group_paths else candidate.lines
+        if group_paths and key not in answers:
+            # Compare against a stable anchor to avoid transitive A≈B≈C
+            # grouping when A and C are substantially different.
+            key = next((old_key for old_key, anchor in anchors.items()
+                        if matcher.same_journey(anchor, candidate)), key)
         old = answers.get(key)
         if old is not None and rank >= label_rank(old, routing_mode):
             return
         answers[key] = candidate
+        if group_paths:
+            anchors.setdefault(key, candidate)
         if len(answers) > limit:
             worst = max(answers, key=lambda k: (label_rank(answers[k], routing_mode), k))
             del answers[worst]
+            anchors.pop(worst, None)
         worst_rank = (max(label_rank(x, routing_mode) for x in answers.values())
                       if len(answers) == limit else None)
 
@@ -227,5 +237,14 @@ def raptor_routes(indexes, origins, destinations, limit, counts, routing_mode="f
         if label.lines:
             category = ('direct', 'one_transfer', 'two_transfers', 'three_transfers')[len(label.lines) - 1]
             counts[category] += 1
-    ordered = sorted(answers.values(), key=lambda label: (label_rank(label, routing_mode), label.lines))
-    return [reconstruct(indexes, label) for label in ordered[:limit]]
+    ordered = sorted(answers.items(), key=lambda item: (label_rank(item[1], routing_mode), item[1].lines))
+    result = []
+    for key, label in ordered[:limit]:
+        journey = reconstruct(indexes, label)
+        if group_paths:
+            references = iter(ride_steps(anchors[key]))
+            journey = replace(journey, legs=tuple(
+                replace(leg, grouping_reference=next(references)) if not leg.is_walking else leg
+                for leg in journey.legs))
+        result.append(journey)
+    return result

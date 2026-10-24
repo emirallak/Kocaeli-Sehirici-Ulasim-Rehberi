@@ -35,6 +35,7 @@ def reconstruct_itinerary(indexes: RoutingIndexes, legs: Iterable[Leg]) -> Itine
                 raw_leg,
                 board_stop_name=board_stop.name,
                 alight_stop_name=alight_stop.name,
+                grouping_reference=raw_leg.grouping_reference,
             ))
             continue
 
@@ -54,6 +55,7 @@ def reconstruct_itinerary(indexes: RoutingIndexes, legs: Iterable[Leg]) -> Itine
                 canonical_leg,
                 board_stop_name=board_stop.name,
                 alight_stop_name=alight_stop.name,
+                grouping_reference=raw_leg.grouping_reference,
             )
         )
     return Itinerary(tuple(rich_legs))

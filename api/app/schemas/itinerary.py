@@ -30,6 +30,8 @@ class Leg:
     alight_stop_name: str | None = None
     mode: str = "Otobüs"
     walking_metres: int | None = None
+    # Stable similarity anchor, independent of the fastest group member.
+    grouping_reference: tuple[PatternId, int, int] | None = None
 
     def __post_init__(self) -> None:
         if self.walking_metres is None and self.board_index >= self.alight_index:
