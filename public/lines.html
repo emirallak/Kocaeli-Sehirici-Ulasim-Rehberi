@@ -4,29 +4,44 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1b38">
+  <meta name="color-scheme" content="light dark">
   <title>Hat Bilgileri · Kocaeli Rota</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230b1b38'/%3E%3Cpath d='M10 8v16M10 16l9-8M13 13l7 11' stroke='%2367e8f9' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="/net.js" defer></script>
   <script src="/line-display.js" defer></script>
   <script src="/lines.js" defer></script>
 </head>
 <body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/" aria-label="Kocaeli Rota ana sayfa">
+        <span class="brand-mark" aria-hidden="true">K</span>
+        <span>Kocaeli Rota<small>Akıllı ulaşım asistanı</small></span>
+      </a>
+      <nav class="page-nav" aria-label="Ana menü"><a href="/">Rota bul</a><a href="/line-info" aria-current="page">Hat bilgileri</a></nav>
+    </div>
+  </header>
   <main class="page">
-    <header class="brand"><span class="brand-mark">K</span><span>KOCAELİ ROTA<small>AKILLI ULAŞIM ASİSTANI</small></span></header>
-    <nav class="page-nav" aria-label="Ana menü"><a href="/">Rota bul</a><a href="/line-info" aria-current="page">Hat bilgileri</a></nav>
-    <section class="hero"><div class="eyebrow">KOCAELİ HAT REHBERİ</div><h1>Hattını tanı.<br>Yolunu gör.</h1><p>Otobüs ve tramvay hatlarının kalkış saatlerini, duraklarını ve tüm güzergâhını keşfet.</p></section>
-    <section class="search-panel" aria-labelledby="line-search-heading">
-      <div class="panel-heading"><h2 id="line-search-heading">Hangi hat?</h2><p>Hat numarası veya güzergâh adıyla ara.</p></div>
-      <div class="stop-field line-search"><label for="line-search">Hat seçimi</label><input id="line-search" type="text" placeholder="Örn. 100 veya Otogar" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="line-options" aria-describedby="line-search-status"><ul id="line-options" class="stop-options" role="listbox" aria-label="Hatlar" hidden></ul><span id="line-search-status" class="stop-status" role="status"></span></div>
+    <section class="hero hero-compact" aria-labelledby="line-search-heading">
+      <div class="hero-copy">
+        <div class="eyebrow">Kocaeli hat rehberi</div>
+        <h1 id="line-search-heading">Hattını tanı.<br>Yolunu gör.</h1>
+        <p>Otobüs ve tramvay hatlarının kalkış saatlerini, duraklarını ve tüm güzergâhını keşfet.</p>
+      </div>
+      <div class="search-card">
+        <div class="stop-field line-search"><label for="line-search">Hat numarası veya adı</label><input id="line-search" type="text" placeholder="Örn. 100 veya Otogar" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="line-options" aria-describedby="line-search-status"><ul id="line-options" class="stop-options" role="listbox" aria-label="Hatlar" hidden></ul><span id="line-search-status" class="stop-status" role="status"></span></div>
+      </div>
     </section>
     <div id="line-status" class="empty-panel" role="status">Bir hat seçerek saatleri ve güzergâhı görüntüle.</div>
-    <button id="line-retry" class="line-retry" type="button" hidden>Yeniden dene</button>
+    <button id="line-retry" class="line-retry primary-button" type="button" hidden>Yeniden dene</button>
     <section id="line-details" class="results" aria-labelledby="line-title" hidden>
-      <div class="result-heading"><div><h2 id="line-title"></h2><p id="line-description"></p></div><span>Statik sefer tarifesi · Türkiye saati</span></div>
+      <div class="result-heading"><div><h2 id="line-title"></h2><p id="line-description"></p></div><span class="estimate-note">Statik sefer tarifesi · Türkiye saati</span></div>
       <div class="journey-card"><label for="line-variant">Yön ve güzergâh</label><select id="line-variant"></select><p class="line-note">Her yönün ve alternatif güzergâhın durakları ile saatleri ayrı gösterilir.</p></div>
       <div class="line-layout">
         <div><article class="journey-card"><h3>Saatler</h3><p class="line-note">Seçili yöndeki tüm güzergâhların ilk duraktan kalkış saatleri gösterilir. Renkli, numaralı saatler özel seferleri belirtir. Gece yarısını geçen seferler tarife gününü izleyen güne aittir; ayrıntı için saatin üzerine gel. Canlı sefer bilgisi değildir.</p><div id="line-timetables"></div><section id="line-legend" class="trip-legend" aria-label="Özel sefer açıklamaları" hidden></section></article><article class="journey-card"><h3 id="line-stop-heading">Duraklar</h3><ol id="line-stops" class="line-timeline"></ol></article></div>

@@ -4,62 +4,71 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1b38">
+  <meta name="color-scheme" content="light dark">
   <meta name="description" content="Kocaeli otobüs ve tramvay rotalarını süre, aktarma ve yürüyüşe göre karşılaştırın.">
   <title>Kocaeli Rota · Akıllı Ulaşım Asistanı</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230b1b38'/%3E%3Cpath d='M10 8v16M10 16l9-8M13 13l7 11' stroke='%2367e8f9' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="/net.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/autocomplete.js" defer></script>
 </head>
 <body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/" aria-label="Kocaeli Rota ana sayfa">
+        <span class="brand-mark" aria-hidden="true">K</span>
+        <span>Kocaeli Rota<small>Akıllı ulaşım asistanı</small></span>
+      </a>
+      <nav class="page-nav" aria-label="Ana menü"><a href="/" aria-current="page">Rota bul</a><a href="/line-info">Hat bilgileri</a></nav>
+    </div>
+  </header>
+
   <main class="page">
-    <header class="brand" aria-label="Kocaeli Rota">
-      <span class="brand-mark">K</span>
-      <span>KOCAELİ ROTA<small>AKILLI ULAŞIM ASİSTANI</small></span>
-    </header>
-    <nav class="page-nav" aria-label="Ana menü"><a href="/" aria-current="page">Rota bul</a><a href="/line-info">Hat bilgileri</a></nav>
-
     <section class="hero" aria-labelledby="hero-heading">
-      <div class="eyebrow">KOCAELİ İÇİN DAHA AKILLI ROTA</div>
-      <h1 id="hero-heading">Şehrin en iyi yolunu<br>tek bakışta bul.</h1>
-      <p>Otobüs, tramvay ve yürüyüş seçeneklerini karşılaştır. Süre, aktarma, yürüyüş veya tramvay önceliğini seç.</p>
-      <div class="hero-tags" aria-hidden="true"><span>◉ Doğrudan hatlar</span><span>◷ Tahmini yolculuk süresi</span><span>⌁ Haritada güzergâh</span></div>
-    </section>
+      <div class="hero-copy">
+        <div class="eyebrow">Otobüs · Tramvay · Yürüyüş</div>
+        <h1 id="hero-heading">Şehrin en iyi yolunu<br>tek bakışta bul.</h1>
+        <p>Kalkış ve varış durağını yaz; doğrudan hatları, aktarmaları ve yürüyüş mesafesini karşılaştır.</p>
+      </div>
 
-    <section class="search-panel" aria-labelledby="search-heading">
-      <div class="panel-heading"><h2 id="search-heading">Nereye gidiyorsun?</h2><p>Kalkış ve varış durağını yaz, sana uygun üç rotayı karşılaştır.</p></div>
-      <form id="route-form">
-        <div class="field-grid">
-          <div class="stop-field"><label for="origin">Kalkış durağı</label><input id="origin" name="origin" type="text" placeholder="Örn. Kuruçeşme Işıklar" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="origin-options" aria-describedby="origin-status" required><ul id="origin-options" class="stop-options" role="listbox" aria-label="Kalkış durakları" hidden></ul><span id="origin-status" class="stop-status" role="status"></span></div>
-          <div class="stop-field"><label for="destination">Varış durağı</label><input id="destination" name="destination" type="text" placeholder="Örn. Yeni Cuma Doğu" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="destination-options" aria-describedby="destination-status" required><ul id="destination-options" class="stop-options" role="listbox" aria-label="Varış durakları" hidden></ul><span id="destination-status" class="stop-status" role="status"></span></div>
+      <form id="route-form" class="search-card" aria-label="Rota arama">
+        <div class="stop-inputs">
+          <div class="stop-rail" aria-hidden="true"><span class="dot origin"></span><span class="rail"></span><span class="dot destination"></span></div>
+          <div class="stop-fields">
+            <div class="stop-field"><label for="origin">Nereden</label><input id="origin" name="origin" type="text" placeholder="Kalkış durağı · Örn. Kuruçeşme Işıklar" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="origin-options" aria-describedby="origin-status" required><ul id="origin-options" class="stop-options" role="listbox" aria-label="Kalkış durakları" hidden></ul><span id="origin-status" class="stop-status" role="status"></span></div>
+            <div class="stop-field"><label for="destination">Nereye</label><input id="destination" name="destination" type="text" placeholder="Varış durağı · Örn. Yeni Cuma Doğu" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="destination-options" aria-describedby="destination-status" required><ul id="destination-options" class="stop-options" role="listbox" aria-label="Varış durakları" hidden></ul><span id="destination-status" class="stop-status" role="status"></span></div>
+          </div>
+          <button id="swap-stops" class="swap-button" type="button" aria-label="Kalkış ve varışı yer değiştir" title="Yer değiştir"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16m0 0-3-3m3 3 3-3M17 20V4m0 0-3 3m3-3 3 3"/></svg></button>
         </div>
-        <div class="form-actions">
-          <label class="filter-label">Rota filtresi
-            <select id="routing-mode" name="routing_mode">
-              <option value="fastest">En Hızlı</option>
-              <option value="fewest_transfers" selected>En Az Aktarmalı</option>
-              <option value="minimal_walking">En Az Yürümeli</option>
-              <option value="prefer_tram">Tramvay Tercihli</option>
-            </select>
-          </label>
-          <button id="search-button" type="submit">Rotaları bul <span aria-hidden="true">→</span></button>
-        </div>
+
+        <fieldset class="mode-picker">
+          <legend>Öncelik</legend>
+          <label><input type="radio" name="routing_mode" value="fewest_transfers" checked><span>En az aktarma</span></label>
+          <label><input type="radio" name="routing_mode" value="fastest"><span>En hızlı</span></label>
+          <label><input type="radio" name="routing_mode" value="minimal_walking"><span>En az yürüme</span></label>
+          <label><input type="radio" name="routing_mode" value="prefer_tram"><span>Tramvay öncelikli</span></label>
+        </fieldset>
+
+        <button id="search-button" class="primary-button" type="submit">Rotaları bul <span aria-hidden="true">→</span></button>
+        <div id="recent-searches" class="recent" hidden></div>
       </form>
     </section>
 
     <section id="results-section" class="results" aria-live="polite" aria-busy="false" hidden>
-      <div class="result-heading"><div><h2 id="results-title">Önerilen güzergâhlar</h2><p id="results-description"></p></div><span>Süreler ve varış saatleri tahminidir</span></div>
+      <div class="result-heading"><div><h2 id="results-title">Önerilen güzergâhlar</h2><p id="results-description"></p></div><span class="estimate-note">Süreler tahminidir · bekleme dahil</span></div>
       <div id="results-list"></div>
     </section>
 
     <details class="chat-panel">
       <summary>Doğal dille rota sor</summary>
-      <form id="chat-form"><label>Sorun<input id="chat-message" type="text" placeholder="Otogar durağından Seka Park durağına nasıl giderim?" required></label><button type="submit">Rotayı göster</button></form>
-      <p>Yukarıdaki rota filtresi bu aramada da kullanılır.</p>
+      <form id="chat-form"><label>Sorun<input id="chat-message" type="text" placeholder="Otogar durağından Seka Park durağına" required></label><button type="submit" class="primary-button">Rotayı göster</button></form>
+      <p>Seçili öncelik bu aramada da kullanılır. Biçim: <em>… durağından … durağına</em></p>
     </details>
 
     <footer>Kocaeli Rota · Statik GTFS verisi kullanılır. Süreler ortalama hız, durak sayısı ve her binişte 5 dk bekleme varsayımıyla hesaplanır. Canlı sefer saatleri ve trafik doğrulanmaz.</footer>

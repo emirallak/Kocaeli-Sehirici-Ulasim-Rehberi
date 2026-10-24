@@ -18,11 +18,10 @@ function filterStops(catalog, query, limit = 12) {
 let stopCatalogPromise;
 function loadStopCatalog() {
   if (!stopCatalogPromise) {
-    stopCatalogPromise = fetch('/api/stops').then(async response => {
-      if (!response.ok) throw new Error('Durak listesi yüklenemedi');
-      const payload = await response.json();
-      return payload.stops.map(stop => ({...stop, key: normalizeStopText(stop.name)}));
-    }).catch(error => {
+    // Retries cover the slow first request after the server has been idle.
+    stopCatalogPromise = fetchJSON('/api/stops', {}, {timeout: 20000, retries: 3}).then(payload =>
+      payload.stops.map(stop => ({...stop, key: normalizeStopText(stop.name)}))
+    ).catch(error => {
       stopCatalogPromise = undefined; // A later focus can retry a failed request.
       throw error;
     });

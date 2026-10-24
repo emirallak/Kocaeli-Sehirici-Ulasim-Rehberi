@@ -18,19 +18,24 @@
     input.removeAttribute('aria-activedescendant');
     active = -1;
   }
+  let catalogLoading = false;
   async function loadCatalog() {
-    if (catalog) return;
+    if (catalog || catalogLoading) return;
+    catalogLoading = true;
     $('line-search-status').textContent = 'Hatlar yükleniyor…';
     try {
-      const response = await fetch('/api/lines');
-      if (!response.ok) throw new Error();
-      catalog = (await response.json()).lines;
+      catalog = (await fetchJSON('/api/lines', {}, {
+        retries: 3,
+        onRetry: () => { $('line-search-status').textContent = 'Sunucu uyanıyor, yeniden deneniyor…'; },
+      })).lines;
       $('line-search-status').textContent = `${catalog.length} hat · numara veya adla ara`;
       $('line-retry').hidden = true;
       if (document.activeElement === input) renderOptions();
     } catch {
       $('line-search-status').textContent = 'Hat listesi yüklenemedi.';
       $('line-retry').hidden = false;
+    } finally {
+      catalogLoading = false;
     }
   }
   function renderOptions() {
@@ -57,9 +62,8 @@
     $('line-details').hidden = true; status.hidden = false; status.textContent = 'Hat bilgileri yükleniyor…';
     $('line-details').setAttribute('aria-busy', 'true'); $('line-retry').hidden = true;
     try {
-      const response = await fetch(`/api/lines/${encodeURIComponent(item.id)}`, {signal: controller.signal});
-      if (!response.ok) throw new Error();
-      const payload = await response.json(); if (current !== requestId) return;
+      const payload = await fetchJSON(`/api/lines/${encodeURIComponent(item.id)}`, {}, {signal: controller.signal});
+      if (current !== requestId) return;
       line = payload;
       $('line-title').textContent = `${line.code} · ${line.name}`;
       $('line-description').textContent = `${line.mode} · ${line.variants.length} yön / güzergâh seçeneği`;
