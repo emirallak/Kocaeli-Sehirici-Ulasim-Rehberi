@@ -104,15 +104,38 @@ def resolve_stop_ids(
 
     best_score = 0.0
     scored_candidates: list[tuple[float, StopId]] = []
+    fuzzy_candidates: list[tuple[float, float, str, tuple[StopId, ...]]] = []
     # Prefer district-scoped matches, but do not make stations whose source
-    # omits a district impossible to find.
-    for names, district_bonus in ((names_in_district, 0.02), (fallback_names, 0.0)):
+    # omits a district impossible to find. An empty district *is* the
+    # fallback index; its unbonused second pass could only score lower.
+    passes = [(names_in_district, 0.02)]
+    if fallback_names is not names_in_district:
+        passes.append((fallback_names, 0.0))
+    for names, district_bonus in passes:
         if not names:
             continue
         for indexed_name, stop_ids in names.items():
-            score = _name_similarity(name_query, indexed_name) + district_bonus
+            score = _cheap_similarity(name_query, indexed_name)
+            if score is None:
+                score = _token_overlap(name_query, indexed_name) * 0.88
+                fuzzy_candidates.append((score, district_bonus, indexed_name, stop_ids))
+                continue
+            score += district_bonus
             best_score = max(best_score, score)
             scored_candidates.extend((score, stop_id) for stop_id in stop_ids)
+    # SequenceMatcher dominates resolution time. Its cheap upper bounds skip
+    # names whose fuzzy score could neither raise the best score nor reach
+    # the final near-best threshold (best - 0.03 with best >= 0.70), which is
+    # never below this cutoff.
+    for overlap, district_bonus, indexed_name, stop_ids in fuzzy_candidates:
+        score = overlap
+        cutoff = max(0.67, best_score - 0.03) - district_bonus
+        matcher = SequenceMatcher(a=name_query, b=indexed_name)
+        if matcher.real_quick_ratio() >= cutoff and matcher.quick_ratio() >= cutoff:
+            score = max(score, matcher.ratio())
+        score += district_bonus
+        best_score = max(best_score, score)
+        scored_candidates.extend((score, stop_id) for stop_id in stop_ids)
 
     # Exact, substring, token overlap, and fuzzy matches receive descending
     # scores.  A weak match is reported as unresolved rather than guessed.
@@ -173,15 +196,26 @@ def resolve_stop_id(
 
 
 def _name_similarity(query: str, candidate: str) -> float:
+    score = _cheap_similarity(query, candidate)
+    if score is not None:
+        return score
+    fuzzy = SequenceMatcher(a=query, b=candidate).ratio()
+    return max(_token_overlap(query, candidate) * 0.88, fuzzy)
+
+
+def _cheap_similarity(query: str, candidate: str) -> float | None:
+    """Exact and substring scores, or ``None`` when fuzzy matching decides."""
     if query == candidate:
         return 1.0
     if query in candidate or candidate in query:
         return 0.9 + 0.09 * min(len(query), len(candidate)) / max(
             len(query), len(candidate)
         )
+    return None
+
+
+def _token_overlap(query: str, candidate: str) -> float:
     query_tokens, candidate_tokens = set(query.split()), set(candidate.split())
-    overlap = len(query_tokens & candidate_tokens) / max(
+    return len(query_tokens & candidate_tokens) / max(
         len(query_tokens), len(candidate_tokens), 1
     )
-    fuzzy = SequenceMatcher(a=query, b=candidate).ratio()
-    return max(overlap * 0.88, fuzzy)

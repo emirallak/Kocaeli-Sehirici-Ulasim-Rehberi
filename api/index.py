@@ -7,11 +7,12 @@ import os
 from difflib import get_close_matches
 from datetime import datetime, timedelta, timezone
 from math import ceil
+from pathlib import Path
 from bisect import bisect_left, bisect_right
 from functools import lru_cache
 from threading import Lock
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -19,7 +20,8 @@ from pydantic import BaseModel, Field
 from api.app.api.stops import StopNameIndex, build_stop_catalog, build_stop_name_index, normalize_text, resolve_stop_ids
 from api.app.api.lines import line_catalog, line_details
 from api.app.chat.intent import extract_trip_intent
-from api.app.data.loader import GTFSLoadError, load_snapshot
+from api.app.data.cache import load_cached_snapshot
+from api.app.data.loader import GTFSLoadError
 from api.app.data.transport import public_line_code
 from api.app.routing.reconstruct import reconstruct_itinerary
 from api.app.routing.metrics import itinerary_metres, leg_metres, itinerary_minutes, leg_minutes, BOARDING_WAIT_MINUTES
@@ -35,6 +37,10 @@ logger = logging.getLogger(__name__)
 RAW_DATA_DIR = os.path.join(os.path.dirname(__file__), "app", "data", "raw")
 PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "..", "public")
 _snapshot_lock = Lock()
+# The GTFS data changes only with a deployment, and Vercel purges its CDN cache
+# on every deployment, so catalog responses can be served from the edge. This
+# also keeps page loads fast while the function itself is cold.
+STATIC_DATA_CACHE = "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800"
 
 
 class ChatRequest(BaseModel):
@@ -48,7 +54,7 @@ def load_static_snapshot() -> None:
     """Load the local Kocaeli routing graph once per API process."""
 
     try:
-        snapshot = load_snapshot(RAW_DATA_DIR)
+        snapshot = load_cached_snapshot(Path(RAW_DATA_DIR))
     except (GTFSLoadError, OSError, EOFError) as error:
         logger.error("Kocaeli data is unavailable: %s", error)
         app.state.load_error = str(error)
@@ -165,7 +171,7 @@ def health() -> dict[str, int | str]:
 
 @app.get("/api/stops")
 @app.get("/stops", include_in_schema=False)
-def stops(q: str = Query(default="", max_length=200),
+def stops(response: Response, q: str = Query(default="", max_length=200),
           limit: int = Query(default=12, ge=1, le=50)) -> dict[str, object]:
     """Return a compact active-stop catalog, or ranked autocomplete matches.
 
@@ -173,6 +179,7 @@ def stops(q: str = Query(default="", max_length=200),
     Directional platforms sharing a name/district appear as one suggestion.
     """
     snapshot, _ = _state()
+    response.headers["Cache-Control"] = STATIC_DATA_CACHE
     cached = getattr(app.state, "stop_catalog", None)
     if cached is None or cached[0] is not snapshot:
         cached = (snapshot, build_stop_catalog(snapshot.indexes))
@@ -188,8 +195,9 @@ def stops(q: str = Query(default="", max_length=200),
 
 @app.get("/api/lines")
 @app.get("/lines", include_in_schema=False)
-def lines(q: str = Query(default="", max_length=200)) -> dict:
+def lines(response: Response, q: str = Query(default="", max_length=200)) -> dict:
     snapshot, _ = _state()
+    response.headers["Cache-Control"] = STATIC_DATA_CACHE
     catalog = line_catalog(snapshot)
     query = normalize_text(q)
     return {"lines": [line for line in catalog
@@ -198,12 +206,14 @@ def lines(q: str = Query(default="", max_length=200)) -> dict:
 
 @app.get("/api/lines/{route_id}")
 @app.get("/lines/{route_id}", include_in_schema=False)
-def get_line(route_id: str) -> dict:
+def get_line(route_id: str, response: Response) -> dict:
     snapshot, _ = _state()
     try:
-        return line_details(snapshot, route_id)
+        details = line_details(snapshot, route_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Hat bulunamadı") from None
+    response.headers["Cache-Control"] = STATIC_DATA_CACHE
+    return details
 
 
 def _resolve_query(query, stop_name_index, indexes):
@@ -255,7 +265,7 @@ def _state() -> tuple[RoutingSnapshot, StopNameIndex]:
                 if getattr(app.state, "load_error", None):
                     raise HTTPException(status_code=503, detail=app.state.load_error)
                 try:
-                    _install_snapshot(load_snapshot(RAW_DATA_DIR))
+                    _install_snapshot(load_cached_snapshot(Path(RAW_DATA_DIR)))
                 except (GTFSLoadError, OSError, EOFError) as error:
                     app.state.load_error = str(error)
                     raise HTTPException(status_code=503, detail=str(error)) from error

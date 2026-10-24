@@ -12,7 +12,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "includeFiles": "api/app/data/raw/**",
+      "includeFiles": "api/app/data/{raw/**,snapshot.pickle.xz}",
       "excludeFiles": "{tests/**,public/**,frontend/**,**/__pycache__/**}"
     }
   }
