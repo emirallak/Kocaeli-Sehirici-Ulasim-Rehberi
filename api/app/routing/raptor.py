@@ -25,6 +25,10 @@ MAX_RIDES = 4
 # straight line; shrink the remaining-distance bound so it stays admissible.
 BOUND_SCALE = 0.9
 BOUND_SLACK_METRES = 300
+# A ride "could have continued" to a later stop of the journey only when
+# staying on is not a long detour (a loop line may reach it the long way).
+CONTINUATION_DETOUR = 1.3
+CONTINUATION_SLACK_METRES = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +158,84 @@ def label_rank(label, routing_mode):
     return label.cost, transfers, label.walking
 
 
+def _step_metres(indexes, step):
+    if step[0] is None:
+        return step[1]
+    metres = indexes.metres_at_position[step[0]]
+    return metres[step[2]] - metres[step[1]]
+
+
+def _could_ride(positions, allowed, metres, stops, before, board, limit_for):
+    """Whether the ride's pattern stops at one of ``stops`` before/after ``board``.
+
+    ``limit_for(stop)`` is the longest ride (metres) that still counts as a
+    shortcut, so a loop line reaching the stop the long way does not.
+    """
+    for stop in stops:
+        limit = limit_for(stop)
+        for position in positions.get(stop, ()):
+            if position in allowed and (position < board if before else position > board)                     and abs(metres[board] - metres[position]) <= limit:
+                return True
+    return False
+
+
+def is_roundabout(indexes, label, origins=frozenset(), destinations=frozenset()):
+    """Whether a journey wastes a leg the traveller would never take.
+
+    Itinerary filters of production planners (e.g. OpenTripPlanner) drop
+    journeys another result strictly improves on by riding the same vehicle
+    further. Here that means a journey which
+
+    * returns to a stop it already visited (it could have continued there);
+    * leaves a ride only to walk or transfer to a stop, or any destination
+      platform, the same vehicle was going to anyway, e.g. getting off one
+      stop early and walking the rest;
+    * reaches a ride by walking or riding to a stop the same vehicle had
+      already passed at an earlier stop of the journey or an origin platform.
+
+    The shorter journey is found too and is never worse, so these are
+    duplicates to the traveller, not alternatives.
+    """
+    steps = []
+    while label.parent is not None:
+        steps.append((label.stop, label.step))
+        label = label.parent
+    steps.reverse()
+    stops = [label.stop, *(stop for stop, _ in steps)]  # stops[k] precedes steps[k].
+    if len(set(stops)) < len(stops):
+        return True
+    reached = [0.0]  # Metres travelled when standing at stops[k].
+    for _, step in steps:
+        reached.append(reached[-1] + _step_metres(indexes, step))
+    total = reached[-1]
+
+    def limit(journey):
+        return journey * CONTINUATION_DETOUR + CONTINUATION_SLACK_METRES
+
+    for index, (_, step) in enumerate(steps):
+        pid = step[0]
+        if pid is None:
+            continue
+        board = step[1]
+        positions = indexes.positions[pid]
+        metres = indexes.metres_at_position[pid]
+        if index + 1 < len(steps):
+            later = {stop: reached[k] for k, stop in enumerate(stops) if k > index + 1}
+            for stop in destinations:
+                later.setdefault(stop, total)
+            if _could_ride(positions, indexes.alightable_positions[pid], metres, later, False, board,
+                           lambda stop: limit(later[stop] - reached[index])):
+                return True
+        if index:
+            earlier = {stop: reached[k] for k, stop in enumerate(stops[:index])}
+            for stop in origins:
+                earlier.setdefault(stop, 0.0)
+            if _could_ride(positions, indexes.boardable_positions[pid], metres, earlier, True, board,
+                           lambda stop: limit(reached[index] - earlier[stop])):
+                return True
+    return False
+
+
 def reconstruct(indexes, label):
     legs = []
     while label.parent is not None:
@@ -211,6 +293,8 @@ def raptor_routes(indexes, origins, destinations, limit, counts, routing_mode="f
             candidate = label
         rank = label_rank(candidate, routing_mode)
         if worst_rank is not None and rank > worst_rank:
+            return
+        if is_roundabout(indexes, candidate, origins, destinations):
             return
         key = label_path(indexes, candidate) if group_paths else candidate.lines
         if group_paths and key not in answers:

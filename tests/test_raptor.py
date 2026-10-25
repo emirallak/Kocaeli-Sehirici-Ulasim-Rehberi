@@ -55,6 +55,33 @@ class RaptorTests(unittest.TestCase):
         self.assertEqual(best_routes(graph, [0], [2], 3), [])
         self.assertEqual(best_routes(graph, [1], [2], 3)[0].legs[0].board_stop, 1)
 
+    def test_alighting_early_to_walk_where_the_ride_goes_is_not_an_alternative(self):
+        # Stops ~330 m apart, so 2 → 3 is also walkable.
+        stops = {i: Stop(i, str(i), str(i), 40.70 + i * 0.003, 29.90) for i in range(4)}
+        pattern = Pattern(0, 'R', '0', (0, 1, 2, 3), frozenset({'W'}), frozenset(Weekday), '100', frozenset())
+        graph = build_indexes(stops, {0: pattern})
+        self.assertTrue(graph.walking_neighbors[2])
+        for mode in ('fastest', 'fewest_transfers', 'minimal_walking', 'prefer_tram'):
+            with self.subTest(mode=mode):
+                [route] = best_routes(graph, [0], [3], 3, routing_mode=mode, group_paths=True)
+                self.assertEqual([leg.alight_stop for leg in route.legs], [3])
+
+    def test_same_vehicle_from_another_origin_or_to_another_destination_platform(self):
+        # A line 0-1-2-3 every ~330 m; platforms 4 and 5 sit beside stops 1 and 2.
+        stops = {i: Stop(i, str(i), str(i), 40.70 + i * 0.003, 29.90) for i in range(4)}
+        stops[4] = Stop(4, '4', '4', 40.703, 29.9015)
+        stops[5] = Stop(5, '5', '5', 40.706, 29.9015)
+        pattern = Pattern(0, 'R', '0', (0, 1, 2, 3), frozenset({'W'}), frozenset(Weekday), '100', frozenset())
+        graph = build_indexes(stops, {0: pattern})
+        for mode in ('fastest', 'fewest_transfers', 'minimal_walking', 'prefer_tram'):
+            with self.subTest(mode=mode):
+                # Riding to 3 beats alighting at 2 to walk to the other platform 5.
+                [route] = best_routes(graph, [0], [3, 5], 3, routing_mode=mode, group_paths=True)
+                self.assertEqual([(leg.board_stop, leg.alight_stop) for leg in route.legs], [(0, 3)])
+                # Boarding at origin 0 beats walking from origin 4 to board at 1.
+                [route] = best_routes(graph, [0, 4], [3], 3, routing_mode=mode, group_paths=True)
+                self.assertEqual([(leg.board_stop, leg.alight_stop) for leg in route.legs], [(0, 3)])
+
     def test_small_networks_match_exhaustive_journey_enumeration(self):
         import random
         from api.app.routing.metrics import journey_rank
@@ -82,7 +109,24 @@ class RaptorTests(unittest.TestCase):
                                 board_index=board, alight_index=alight)
                             enumerate_journeys(leg.alight_stop, legs + [leg], used | {pid})
 
+            def is_roundabout(journey):
+                stops = [journey.legs[0].board_stop, *(leg.alight_stop for leg in journey.legs)]
+                if len(set(stops)) < len(stops):
+                    return True
+                # Stops have no coordinates here, so every detour is short.
+                for index, leg in enumerate(journey.legs):
+                    stop_ids = graph.patterns[leg.pattern_id].stop_ids
+                    later = {other.alight_stop for other in journey.legs[index + 1:]}
+                    if any(stop in later for stop in stop_ids[leg.board_index + 1:]):
+                        return True
+                    # Could this vehicle have been boarded earlier on the journey?
+                    earlier = set(stops[:index])
+                    if index and any(stop in earlier for stop in stop_ids[:leg.board_index]):
+                        return True
+                return False
+
             enumerate_journeys(0, [], set())
+            exhaustive = [journey for journey in exhaustive if not is_roundabout(journey)]
             for mode in ('fastest', 'fewest_transfers', 'minimal_walking', 'prefer_tram'):
                 expected = {}
                 for journey in exhaustive:
