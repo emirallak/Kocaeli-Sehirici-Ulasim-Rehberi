@@ -18,7 +18,7 @@ python -m api.app.data.cache               # GTFS veya yükleyici kodu değişin
 ## Mimari
 
 - `api/index.py` — FastAPI uygulaması ve tüm HTTP uçları (`/api/chat`, `/api/stops`,
-  `/api/lines`, `/api/lines/{id}`, `/api/health`). Her uç Vercel için `/api` öneksiz
+  `/api/lines`, `/api/lines/{id}`, `/api/vehicles`, `/api/stop-arrivals`, `/api/health`). Her uç Vercel için `/api` öneksiz
   bir ikizle de kayıtlıdır (`vercel.json` `/api/:path*` → `/:path*` yeniden yazar);
   yeni uç eklerken ikisini de ekle. Yerelde `public/` aynı uygulamadan sunulur.
 - `api/app/data/` — GTFS yükleme. `loader.py` CSV → `RoutingSnapshot`;
@@ -33,12 +33,23 @@ python -m api.app.data.cache               # GTFS veya yükleyici kodu değişin
   binişler arası tek yürüme. `metrics.py` süre/maliyet modeli (ortalama hız +
   biniş başına 5 dk bekleme; gerçek sefer saati kullanılmaz). `grouping.py`
   aynı fiziksel yolu izleyen hatları tek kartta birleştirir (`line_options`).
+  `simulation.py` canlı veri olmadığı için araç konumlarını tarifeden simüle
+  eder: her sefer zamanında kalkar ve hat türü ile kalkış saatine göre sabit
+  ortalama hızla gider (`SPEEDS_KMH`: şehiriçi 16/23, ilçe 25/35 km/h yoğun/
+  diğer saat; tramvay hep 25). Veride ilçe bilgisi yok; ortalama durak aralığı
+  ≥ 600 m olan pattern ilçe hattı sayılır. `/api/vehicles`, `/api/stop-arrivals`
+  ve rota yanıtındaki `upcoming_arrivals` bunu kullanır; rota sıralamasını ve
+  süre tahminini etkilemez.
   `direct.py`/`transfers.py`/`frontiers.py`/`ranking.py` eski arama
   aşamalarıdır; yalnız testler kullanır.
 - `api/app/api/` — durak adı çözümleme (`stops.py`, Türkçe normalize + bulanık
   eşleşme) ve hat sayfası verisi (`lines.py`).
 - `public/` — `index.html`+`app.js`+`autocomplete.js` rota sayfası;
-  `lines.html`+`lines.js`+`line-display.js` hat sayfası; ortak `net.js`
+  `lines.html`+`lines.js`+`line-display.js` hat sayfası (`/line-info`);
+  `stops.html`+`stops.js` durak sayfası (`/stop-info`; sayfa yolları hem
+  `vercel.json` hem yerel FastAPI'de tanımlı); `vehicles.js` haritalardaki simüle
+  araç katmanı (10 sn'de bir sorgu, CSS geçişiyle kayma);
+  ortak `net.js`
   (`fetchJSON`: zaman aşımı + soğuk başlangıç yeniden denemesi) ve tek
   `styles.css` (renkler `:root` tokenları, `prefers-color-scheme` ile koyu tema).
   Leaflet unpkg'den yüklenir. `tests/*.cjs` `app.js`'i DOM'suz `vm` içinde
@@ -54,6 +65,14 @@ python -m api.app.data.cache               # GTFS veya yükleyici kodu değişin
   `alightable_positions` kontrolünü atlama.
 - Bir yolculuktaki tüm adımların en az bir ortak hizmet günü olmalı
   (`Itinerary` bunu doğrular).
+- `raptor.is_roundabout` aynı durağa iki kez uğrayan ya da bir binişin kendi
+  hattı yolculuğun sonraki bir durağına zaten gidiyorken inip yürüyen/aktarma
+  yapan adayları `offer` içinde eler (ör. bir durak önce inip yürümek). Bunlar
+  K sonuçtan yer kaplamaz; `test_raptor` kaba kuvvet doğrulayıcısı aynı kuralı
+  uygular, birini değiştirirsen diğerini de değiştir.
+- GTFS'teki sefer notları (`trip_short_name`, ör. 190'ın hafta sonu "KIRSAL
+  TERMİNAL'E GIDER.") erken bitişi yalnız serbest metinle anlatır; `stop_times`
+  tam güzergâhı listeler. Yönlendirme bu notları yorumlamaz.
 - Snapshot önbelleği, `raw/` dosyalarının ve yükleyici kaynak kodunun parmak
   iziyle doğrulanır; uyuşmazsa CSV'den yeniden kurulur (soğuk başlangıç
   ~10 sn+; önbellekle ~0,5 sn). Yükleyiciyi (`api/app/data/*.py`),

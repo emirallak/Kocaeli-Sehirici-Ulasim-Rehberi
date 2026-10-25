@@ -81,8 +81,9 @@ a { color: inherit; }
 .page { max-width: 1200px; margin: auto; padding: 24px 24px 60px; }
 
 /* Hero with the search card inside it */
-.hero { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 36px; align-items: center; overflow: hidden; padding: 44px; border-radius: 26px; background: radial-gradient(1200px 400px at 110% -10%, #2dd4bf33, transparent 60%), linear-gradient(125deg, var(--hero-from), var(--hero-mid) 58%, var(--hero-to)); box-shadow: var(--shadow-lg); color: #fff; }
-.hero:after { content: ""; position: absolute; left: -140px; bottom: -260px; width: 520px; height: 520px; border: 1px solid #ffffff1f; border-radius: 50%; box-shadow: 0 0 0 70px #ffffff08, 0 0 0 150px #ffffff05; pointer-events: none; }
+/* No overflow clipping here: the search suggestions must be able to extend
+   past the hero. The decorative rings are a background layer instead. */
+.hero { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 36px; align-items: center; padding: 44px; border-radius: 26px; background: radial-gradient(circle at 120px 100%, transparent 259px, #ffffff1f 259px 261px, #ffffff0d 261px 330px, #ffffff05 330px 410px, transparent 410px), radial-gradient(1200px 400px at 110% -10%, #2dd4bf33, transparent 60%), linear-gradient(125deg, var(--hero-from), var(--hero-mid) 58%, var(--hero-to)); box-shadow: var(--shadow-lg); color: #fff; }
 .hero-copy { position: relative; z-index: 1; }
 .eyebrow { color: #9fe3e7; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .hero h1 { margin: 14px 0; font-size: clamp(30px, 4vw, 50px); line-height: 1.06; letter-spacing: -.035em; }
@@ -128,9 +129,9 @@ button { font: inherit; }
 .recent-chip:hover { border-style: solid; border-color: var(--accent); color: var(--accent-strong); }
 
 /* Autocomplete (shared by stop and line search) */
-.stop-field { position: relative; }
-.stop-options { position: absolute; z-index: 1000; top: 74px; left: 0; right: 0; max-height: 300px; margin: 0; padding: 6px; overflow-y: auto; list-style: none; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 16px 36px #0f172a33; }
-.stop-options li { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--text); }
+.stop-field { position: relative; scroll-margin-top: 76px; }
+.stop-options { position: absolute; z-index: 1000; top: 74px; left: 0; right: 0; max-height: min(440px, 60vh); max-height: min(440px, 60dvh); margin: 0; padding: 6px; overflow-y: auto; overscroll-behavior: contain; list-style: none; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 16px 36px #0f172a33; }
+.stop-options li { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
 .stop-options li:hover, .stop-options li[aria-selected=true] { background: var(--accent-soft); color: var(--accent-strong); }
 .stop-options small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
 .stop-status { display: block; min-height: 16px; margin-top: 4px; color: var(--muted); font-size: 11px; }
@@ -201,7 +202,22 @@ button { font: inherit; }
 .leg-meta { margin-top: 4px; color: var(--text-2); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .leg-headsign { margin-top: 3px; color: var(--muted); font-size: 12px; }
 
-.map { height: 320px; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--surface-2); }
+.map { isolation: isolate; height: 320px; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--surface-2); }
+.map-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.journey-next { margin-top: 14px; color: var(--text-2); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.journey-next small { color: var(--muted); }
+.leg-upcoming { margin-top: 4px; color: var(--ok-ink); font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.live-dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 50%; background: var(--tram); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tram) 25%, transparent); animation: pulse 2s ease-in-out infinite; vertical-align: middle; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--tram) 0%, transparent); } }
+
+/* Simulated vehicles: a zero-size Leaflet icon with a centred vehicle glyph.
+   The transition matches the poll interval so markers glide between updates. */
+.vehicle-marker { transition: transform 10s linear; }
+.vehicles-still .vehicle-marker { transition: none; }
+.vehicle-marker span { position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 24px; height: 24px; transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 7px; background: var(--accent); color: #fff; box-shadow: 0 2px 6px #0f172a59; }
+.vehicle-marker svg { width: 15px; height: 15px; }
+.vehicle-marker.tram span { background: var(--tram); }
+.vehicle-marker.passed span { opacity: .55; }
 .map-fallback { display: grid; place-items: center; padding: 20px; color: var(--muted); font-size: 13px; }
 .empty-panel { margin-top: 16px; padding: 26px; border: 1px dashed var(--border-strong); border-radius: 16px; background: var(--surface); color: var(--text-2); }
 
@@ -249,6 +265,22 @@ footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border
 .stop-restriction { display: inline-block; padding: 3px 8px; border: 1px solid #fed7aa; border-radius: 999px; background: #fff7ed; color: #9a3412; font-size: 11px; font-weight: 700; line-height: 1.5; }
 .line-retry { margin-top: 12px; }
 
+/* Stop page */
+.stop-lines { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.line-badge svg { width: 16px; height: 16px; flex: none; }
+.arrival-list { margin: 8px 0 0; padding: 0; list-style: none; }
+.arrival-list li + li { border-top: 1px solid var(--border); }
+.arrival-row { display: flex; align-items: center; gap: 12px; width: 100%; height: auto; padding: 12px 4px; border: 0; border-radius: 10px; background: transparent; color: var(--text); text-align: left; font: inherit; }
+button.arrival-row { cursor: pointer; }
+button.arrival-row:hover { background: var(--surface-2); }
+.arrival-row .line-badge { flex: none; }
+.arrival-body { flex: 1; min-width: 0; }
+.arrival-body strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.arrival-body small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.arrival-minutes { flex: none; color: var(--accent-strong); font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.arrival-minutes.now { color: var(--ok-ink); }
+.arrival-empty { padding: 14px 0; color: var(--text-2); font-size: 14px; }
+
 /* Leaflet in dark mode: keep tiles readable, controls on-theme. */
 @media (prefers-color-scheme: dark) {
   .leaflet-container { background: #0e1628; }
@@ -259,6 +291,8 @@ footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border
   .hero, .hero-compact { grid-template-columns: 1fr; gap: 24px; padding: 30px 24px; }
   .details-grid, .line-layout { grid-template-columns: 1fr; }
   .line-map-card { position: static; grid-row: 1; }
+  /* On the stop page the arrival minutes matter most; keep them first. */
+  .stop-map-card { grid-row: auto; }
   .line-map { height: 360px; }
 }
 @media (max-width: 600px) {
@@ -272,10 +306,24 @@ footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border
   .search-card { padding: 16px; }
   .stop-inputs { grid-template-columns: 14px minmax(0, 1fr) 40px; gap: 8px; }
   .swap-button { width: 40px; height: 40px; }
+  /* The field is scrolled under the top bar on focus; leave the rest of the
+     screen above the keyboard to the suggestions. */
+  .stop-options { max-height: min(360px, 52vh); max-height: min(360px, 52dvh); }
+  .stop-options li { padding: 12px; font-size: 15px; }
+  /* Short pages need room below to scroll the field up that far. */
+  .page:has(.stop-options:not([hidden])) { padding-bottom: 100vh; }
   .journey-card { padding: 18px; }
   .journey-duration { font-size: 28px; }
   .journey-times { align-items: start; }
   .chat-panel form { flex-direction: column; align-items: stretch; }
+}
+/* Three menu items and the brand name do not fit on small phones; the
+   logo alone still links home and carries the accessible name. */
+@media (max-width: 420px) {
+  .topbar-inner { gap: 8px; padding: 10px 12px; }
+  .brand > span:last-child { display: none; }
+  .page-nav { gap: 2px; padding: 3px; }
+  .page-nav a { padding: 7px 9px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *:before, *:after { animation: none !important; transition: none !important; }

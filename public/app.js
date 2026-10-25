@@ -53,6 +53,23 @@ function clock(value) {
     : '—';
 }
 
+/* Simulated next vehicles at a leg's boarding stop, soonest first. */
+function upcomingText(leg) {
+  return (leg.upcoming_arrivals || []).map(arrival =>
+    `${arrival.route_code} ${clock(arrival.at)} (${minutes(arrival.minutes)})`).join(' · ');
+}
+
+/* /api/vehicles specs: every interchangeable line of every ride leg. */
+function vehicleSpecs(route) {
+  const specs = (route.legs || []).filter(leg => !leg.is_walking).flatMap(leg => {
+    const patterns = (leg.line_options || []).flatMap(option => option.patterns || []);
+    const options = patterns.length ? patterns : [leg];
+    return options.filter(option => option.pattern_id != null)
+      .map(option => `${option.pattern_id}:${option.board_index}:${option.alight_index}`);
+  });
+  return [...new Set(specs)].join(',');
+}
+
 function routeCard(route, index) {
   const legs = route.legs || [];
   const rides = legs.filter(leg => !leg.is_walking);
@@ -79,8 +96,15 @@ function routeCard(route, index) {
       : `<span class="line-choices">${lineBadges(leg)}</span>`;
     const hops = leg.is_walking ? '' : ` · ${Math.max(1, (leg.alight_index ?? 1) - (leg.board_index ?? 0))} durak`;
     const headsign = !leg.is_walking && leg.headsigns?.length ? `<div class="leg-headsign">Yön: ${escapeHtml(leg.headsigns.join(' / '))}</div>` : '';
-    return `<li class="leg ${mode}"><span class="leg-icon">${icon(mode)}</span><div class="leg-body"><div class="leg-title">${title}</div><div class="leg-meta">${escapeHtml(leg.board_stop?.name)} → ${escapeHtml(leg.alight_stop?.name)}</div><div class="leg-meta">${minutes(leg.estimated_duration_minutes)}${hops}</div>${headsign}</div></li>`;
+    const upcoming = upcomingText(leg);
+    const next = upcoming ? `<div class="leg-upcoming" title="Tarife ve ortalama hıza göre simülasyon">Sıradaki araçlar: ${escapeHtml(upcoming)}</div>` : '';
+    return `<li class="leg ${mode}"><span class="leg-icon">${icon(mode)}</span><div class="leg-body"><div class="leg-title">${title}</div><div class="leg-meta">${escapeHtml(leg.board_stop?.name)} → ${escapeHtml(leg.alight_stop?.name)}</div><div class="leg-meta">${minutes(leg.estimated_duration_minutes)}${hops}</div>${headsign}${next}</div></li>`;
   }).join('');
+  const firstRide = rides[0];
+  const firstArrival = firstRide?.upcoming_arrivals?.[0];
+  const nextVehicle = firstArrival
+    ? `<div class="journey-next"><span class="live-dot" aria-hidden="true"></span>İlk araç: <strong>${escapeHtml(firstArrival.route_code)}</strong> · ${escapeHtml(firstRide.board_stop?.name)} durağında ${clock(firstArrival.at)} (${minutes(firstArrival.minutes)} sonra) <small>· simülasyon</small></div>`
+    : '';
   const distance = (Number(route.total_distance_metres || 0) / 1000).toLocaleString('tr-TR', {minimumFractionDigits: 1, maximumFractionDigits: 1});
   return `<article class="journey-card ${index === 0 ? 'recommended' : ''}" aria-label="Rota ${index + 1}">
     <div class="journey-top">
@@ -92,14 +116,17 @@ function routeCard(route, index) {
     </div>
     <div class="trip-bar" aria-hidden="true">${bar}</div>
     <div class="journey-segments">${segments}</div>
+    ${nextVehicle}
     <div class="journey-bottom"><span>${escapeHtml(origin)} → ${escapeHtml(destination)}</span><span>${Number(route.walking_metres) || 0} m yürüyüş · ${distance} km</span></div>
-    <details class="route-details" data-route="${index}"><summary>Adımlar ve harita</summary><div class="details-grid"><ol class="leg-list">${detailLegs}</ol><div class="map" id="map-${index}" aria-label="Rota ${index + 1} haritası"></div></div></details>
+    <details class="route-details" data-route="${index}"><summary>Adımlar ve harita</summary><div class="details-grid"><ol class="leg-list">${detailLegs}</ol><div><div class="map" id="map-${index}" aria-label="Rota ${index + 1} haritası"></div><p class="map-note" id="map-note-${index}">Hareketli işaretler, tarifedeki kalkış saatine ve ortalama hıza (şehiriçi yoğun saatte 16, diğer saatlerde 23 km/sa; ilçe hatları 25 / 35 km/sa) göre simüle edilen araçlardır.</p></div></div></details>
   </article>`;
 }
 
 function skeletonCards(count = 3) {
   return Array.from({length: count}, () => `<div class="journey-card skeleton" aria-hidden="true"><span class="sk sk-title"></span><span class="sk sk-bar"></span><span class="sk sk-line"></span><span class="sk sk-line short"></span></div>`).join('');
 }
+
+const vehicleLayers = new Map();
 
 function renderMap(route, index) {
   const element = document.getElementById(`map-${index}`);
@@ -139,6 +166,14 @@ function renderMap(route, index) {
   else if (bounds.length) map.setView(bounds[0], 14);
   else map.setView([40.76, 29.94], 11);
   setTimeout(() => map.invalidateSize(), 0);
+  if (typeof VehicleLayer !== 'undefined') {
+    const note = document.getElementById(`map-note-${index}`);
+    const base = note.textContent;
+    vehicleLayers.set(index, new VehicleLayer(map, {onUpdate: vehicles => {
+      note.textContent = vehicles === null ? `${base} Araç konumları şu an alınamadı.`
+        : `${base} Şu an ${vehicles.length ? `${vehicles.length} araç gösteriliyor` : 'yakında araç yok'}.`;
+    }}));
+  }
 }
 
 function showResults(payload) {
@@ -156,7 +191,13 @@ function showResults(payload) {
     list.innerHTML = routes.slice(0, 3).map(routeCard).join('');
     list.querySelectorAll('details[data-route]').forEach(details => {
       details.addEventListener('toggle', () => {
-        if (details.open) renderMap(routes[Number(details.dataset.route)], Number(details.dataset.route));
+        const index = Number(details.dataset.route);
+        if (details.open) {
+          renderMap(routes[index], index);
+          vehicleLayers.get(index)?.watch(vehicleSpecs(routes[index]));
+        } else {
+          vehicleLayers.get(index)?.stop();
+        }
       });
     });
     const first = list.querySelector('details[data-route="0"]');
@@ -177,6 +218,8 @@ async function search(message, {remember} = {}) {
   const controller = searchController = new AbortController();
   section.hidden = false;
   section.setAttribute('aria-busy', 'true');
+  vehicleLayers.forEach(layer => layer.stop()); // Their maps are replaced below.
+  vehicleLayers.clear();
   document.getElementById('results-title').textContent = 'Rotalar hesaplanıyor…';
   document.getElementById('results-description').textContent = '';
   list.innerHTML = skeletonCards();

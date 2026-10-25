@@ -56,6 +56,7 @@ def line_details(snapshot: RoutingSnapshot, route_id: str) -> dict:
                     pickup, dropoff)
         existing = variants_by_path.get(path_key)
         if existing is not None:
+            existing["pattern_ids"].append(int(pattern.id))
             for table in timetables:
                 previous = next((entry for entry in existing["timetables"]
                                  if entry["service_id"] == table["service_id"]), None)
@@ -66,7 +67,8 @@ def line_details(snapshot: RoutingSnapshot, route_id: str) -> dict:
                                                     key=lambda time: tuple(map(int, time.split(":"))))
                     previous["trips"].extend(table["trips"])
             continue
-        variant = {"id": int(pattern.id), "direction_id": pattern.direction_id,
+        variant = {"id": int(pattern.id), "pattern_ids": [int(pattern.id)],
+                         "direction_id": pattern.direction_id,
                          "name": " / ".join(sorted(pattern.headsigns)) or stops[-1]["name"],
                          "origin": stops[0]["name"], "destination": stops[-1]["name"],
                          "stops": stops, "timetables": timetables,

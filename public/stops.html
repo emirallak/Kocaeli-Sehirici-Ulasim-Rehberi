@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1b38">
+  <meta name="color-scheme" content="light dark">
+  <title>Durak Bilgileri · Kocaeli Rota</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230b1b38'/%3E%3Cpath d='M10 8v16M10 16l9-8M13 13l7 11' stroke='%2367e8f9' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="/net.js" defer></script>
+  <script src="/vehicles.js" defer></script>
+  <script src="/autocomplete.js" defer></script>
+  <script src="/stops.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/" aria-label="Kocaeli Rota ana sayfa">
+        <span class="brand-mark" aria-hidden="true">K</span>
+        <span>Kocaeli Rota<small>Akıllı ulaşım asistanı</small></span>
+      </a>
+      <nav class="page-nav" aria-label="Ana menü"><a href="/">Rota bul</a><a href="/line-info">Hatlar</a><a href="/stop-info" aria-current="page">Duraklar</a></nav>
+    </div>
+  </header>
+  <main class="page">
+    <section class="hero hero-compact" aria-labelledby="stop-search-heading">
+      <div class="hero-copy">
+        <div class="eyebrow">Kocaeli durak rehberi</div>
+        <h1 id="stop-search-heading">Durağını seç.<br>Aracını bekle.</h1>
+        <p>Duraktan geçen hatları, sıradaki araçların kaç dakika sonra geleceğini ve yaklaşan araçların haritadaki yerini gör.</p>
+      </div>
+      <form id="stop-form" class="search-card" aria-label="Durak arama">
+        <div class="stop-field"><label for="stop-search">Durak adı</label><input id="stop-search" type="text" placeholder="Örn. Otogar veya Umuttepe" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="stop-search-options" aria-describedby="stop-search-status" required><ul id="stop-search-options" class="stop-options" role="listbox" aria-label="Duraklar" hidden></ul><span id="stop-search-status" class="stop-status" role="status"></span></div>
+      </form>
+    </section>
+    <div id="stop-status" class="empty-panel" role="status">Bir durak seçerek yaklaşan araçları görüntüle.</div>
+    <button id="stop-retry" class="line-retry primary-button" type="button" hidden>Yeniden dene</button>
+    <section id="stop-details" class="results" aria-labelledby="stop-title" hidden>
+      <div class="result-heading"><div><h2 id="stop-title"></h2><p id="stop-description"></p></div><span class="estimate-note">Simülasyon · canlı veri değildir</span></div>
+      <div id="stop-lines" class="stop-lines" aria-label="Bu duraktan geçen hatlar"></div>
+      <div class="line-layout">
+        <article class="journey-card"><h3>Yaklaşan araçlar</h3><p class="line-note">Önümüzdeki 60 dakika. Tarifedeki kalkış saati ve ortalama hıza göre hesaplanır; her 10 saniyede güncellenir.</p><ol id="stop-arrivals" class="arrival-list"></ol></article>
+        <article class="journey-card line-map-card stop-map-card"><h3>Harita</h3><p id="stop-map-note" class="line-note"></p><div id="stop-map" class="map line-map" aria-label="Durak ve 10 dakika içinde gelecek araçlar"></div></article>
+      </div>
+    </section>
+    <footer>Kocaeli Rota · Kocaeli GTFS verisi kullanılır. Araç konumları tarifeye göre simüle edilir; hafta içi 07:00–09:30 ve 16:30–19:30 arası şehiriçi 16, ilçe hatları 25 km/sa; diğer saatlerde ve hafta sonu şehiriçi 23, ilçe hatları 35 km/sa ortalama hız varsayılır.</footer>
+  </main>
+</body>
+</html>

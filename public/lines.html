@@ -15,6 +15,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="/net.js" defer></script>
   <script src="/line-display.js" defer></script>
+  <script src="/vehicles.js" defer></script>
   <script src="/lines.js" defer></script>
 </head>
 <body>
@@ -24,7 +25,7 @@
         <span class="brand-mark" aria-hidden="true">K</span>
         <span>Kocaeli Rota<small>Akıllı ulaşım asistanı</small></span>
       </a>
-      <nav class="page-nav" aria-label="Ana menü"><a href="/">Rota bul</a><a href="/line-info" aria-current="page">Hat bilgileri</a></nav>
+      <nav class="page-nav" aria-label="Ana menü"><a href="/">Rota bul</a><a href="/line-info" aria-current="page">Hatlar</a><a href="/stop-info">Duraklar</a></nav>
     </div>
   </header>
   <main class="page">
@@ -45,7 +46,7 @@
       <div class="journey-card"><label for="line-variant">Yön ve güzergâh</label><select id="line-variant"></select><p class="line-note">Her yönün ve alternatif güzergâhın durakları ile saatleri ayrı gösterilir.</p></div>
       <div class="line-layout">
         <div><article class="journey-card"><h3>Saatler</h3><p class="line-note">Seçili yöndeki tüm güzergâhların ilk duraktan kalkış saatleri gösterilir. Renkli, numaralı saatler özel seferleri belirtir. Gece yarısını geçen seferler tarife gününü izleyen güne aittir; ayrıntı için saatin üzerine gel. Canlı sefer bilgisi değildir.</p><div id="line-timetables"></div><section id="line-legend" class="trip-legend" aria-label="Özel sefer açıklamaları" hidden></section></article><article class="journey-card"><h3 id="line-stop-heading">Duraklar</h3><ol id="line-stops" class="line-timeline"></ol></article></div>
-        <article class="journey-card line-map-card"><h3>Güzergâh haritası</h3><p id="line-map-note" class="line-note"></p><div id="line-map" class="map line-map" aria-label="Seçilen hattın güzergâhı ve durakları"></div></article>
+        <article class="journey-card line-map-card"><h3>Güzergâh haritası</h3><p id="line-map-note" class="line-note"></p><div id="line-map" class="map line-map" aria-label="Seçilen hattın güzergâhı ve durakları"></div><p class="map-note"><span class="live-dot" aria-hidden="true"></span><span id="line-vehicle-note" role="status">Simüle araçlar yükleniyor…</span> Konumlar tarifedeki kalkış saatine ve ortalama hıza göre tahmin edilir (şehiriçi hatlar hafta içi 07:00–09:30 ve 16:30–19:30 arası 16, diğer saatlerde ve hafta sonu 23 km/sa; ilçe hatları 25 / 35 km/sa); canlı veri değildir.</p></article>
       </div>
     </section>
     <footer>Kocaeli Rota · Kocaeli GTFS verisi kullanılır. Sefer tarifeleri güncel operasyon değişikliklerini yansıtmayabilir.</footer>

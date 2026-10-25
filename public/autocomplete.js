@@ -6,13 +6,22 @@ function normalizeStopText(value) {
     .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
-function filterStops(catalog, query, limit = 12) {
+function filterStops(catalog, query, limit = 20) {
   const text = normalizeStopText(query);
   if (!text) return [];
   const matches = catalog.filter(stop => stop.key.includes(text));
   // The catalog is alphabetically sorted; prefix matches lead substring matches.
   return [...matches.filter(stop => stop.key.startsWith(text)),
     ...matches.filter(stop => !stop.key.startsWith(text))].slice(0, limit);
+}
+
+/* Phone keyboards cover half the screen; lift the field under the top bar so
+ * the suggestions get the visible space below it. Waits for the keyboard. */
+function revealFieldOnPhone(field) {
+  if (!window.matchMedia?.('(max-width: 600px)').matches) return;
+  setTimeout(() => {
+    if (field.contains(document.activeElement)) field.scrollIntoView({block: 'start', behavior: 'smooth'});
+  }, 300);
 }
 
 let stopCatalogPromise;
@@ -29,7 +38,7 @@ function loadStopCatalog() {
   return stopCatalogPromise;
 }
 
-function attachStopAutocomplete(id) {
+function attachStopAutocomplete(id, {onSelect} = {}) {
   const input = document.getElementById(id);
   const list = document.getElementById(`${id}-options`);
   const status = document.getElementById(`${id}-status`);
@@ -51,7 +60,7 @@ function attachStopAutocomplete(id) {
     input.value = stop.name;
     status.textContent = `${stop.name} seçildi`;
     close(true);
-    input.focus();
+    if (onSelect) { input.blur(); onSelect(stop); } else input.focus();
   }
 
   function highlight(index) {
@@ -120,7 +129,7 @@ function attachStopAutocomplete(id) {
     render();
     if (input.value.trim()) ensureCatalog();
   });
-  input.addEventListener('focus', () => { dismissed = false; render(); ensureCatalog(); });
+  input.addEventListener('focus', () => { dismissed = false; render(); ensureCatalog(); revealFieldOnPhone(field); });
   input.addEventListener('blur', () => { close(true); status.textContent = ''; });
   input.addEventListener('keydown', event => {
     if (event.key === 'Escape') { close(true); return; }
@@ -146,7 +155,9 @@ function attachStopAutocomplete(id) {
 
 if (typeof document !== 'undefined') {
   loadStopCatalog().catch(() => {});
-  attachStopAutocomplete('origin');
-  attachStopAutocomplete('destination');
+  // The stop page attaches its own field with a selection handler.
+  for (const id of ['origin', 'destination']) {
+    if (document.getElementById(id)) attachStopAutocomplete(id);
+  }
 }
 if (typeof module !== 'undefined') module.exports = {normalizeStopText, filterStops};

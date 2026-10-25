@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from difflib import get_close_matches
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from math import ceil
 from pathlib import Path
 from bisect import bisect_left, bisect_right
@@ -28,6 +28,7 @@ from api.app.routing.metrics import itinerary_metres, leg_metres, itinerary_minu
 from api.app.routing.metrics import RoutingMode
 from api.app.routing.search import best_routes
 from api.app.routing.grouping import matching_lines
+from api.app.routing.simulation import TURKEY, active_vehicles, arrivals_at, trips_reaching, vehicle_state
 from api.app.schemas.itinerary import Itinerary, Leg
 from api.app.schemas.snapshot import RoutingSnapshot, Weekday
 
@@ -41,6 +42,16 @@ _snapshot_lock = Lock()
 # on every deployment, so catalog responses can be served from the edge. This
 # also keeps page loads fast while the function itself is cold.
 STATIC_DATA_CACHE = "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800"
+# Simulated vehicles that will reach a boarding stop this soon are shown.
+APPROACH_WINDOW_MINUTES = 30
+UPCOMING_ARRIVALS_WINDOW = timedelta(minutes=60)
+MAX_VEHICLE_SPECS = 60
+STOP_ARRIVALS_WINDOW = timedelta(minutes=60)
+MAX_STOP_ARRIVALS = 60
+# Vehicles this close to a stop are drawn on the stop page's map.
+NEARBY_VEHICLE_MINUTES = 10
+# Simulation internals that are not part of the public vehicle payload.
+_PRIVATE_VEHICLE_FIELDS = ("metres", "previous_position")
 
 
 class ChatRequest(BaseModel):
@@ -129,7 +140,7 @@ def chat(request: ChatRequest) -> dict[str, object]:
         best, candidate_counts = cached[1](origin_ids, destination_ids, request.limit, request.routing_mode)
     else:
         best = best_routes(indexes, origin_ids, destination_ids, request.limit, candidate_counts, request.routing_mode, group_paths=True)
-    departure = datetime.now(timezone(timedelta(hours=3)))
+    departure = _now()
     itineraries = [
         _itinerary_to_response(snapshot, reconstruct_itinerary(indexes, itinerary.legs), departure)
         for itinerary in best
@@ -216,6 +227,125 @@ def get_line(route_id: str, response: Response) -> dict:
     return details
 
 
+@app.get("/api/vehicles")
+@app.get("/vehicles", include_in_schema=False)
+def vehicles(response: Response, patterns: str = Query(default="", max_length=2_000)) -> dict:
+    """Simulated vehicle positions for comma-separated pattern specs.
+
+    ``pid`` returns every vehicle on the pattern. ``pid:board:alight`` returns
+    only vehicles riding that leg or reaching its boarding stop soon.
+    """
+    snapshot, _ = _state()
+    response.headers["Cache-Control"] = "no-store"
+    now = _now()
+    specs = []
+    for raw in filter(None, patterns.split(",")[:MAX_VEHICLE_SPECS]):
+        try:
+            parts = [int(part) for part in raw.split(":")]
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Geçersiz hat deseni.") from None
+        if len(parts) not in (1, 3) or parts[0] not in snapshot.patterns:
+            raise HTTPException(status_code=422, detail="Geçersiz hat deseni.")
+        specs.append(parts)
+    found = {}
+    for pattern_id, *leg in specs:
+        pattern = snapshot.patterns[pattern_id]
+        metres = snapshot.indexes.metres_at_position[pattern_id]
+        board = alight = None
+        if leg:
+            board, alight = leg
+            if not 0 <= board < alight < len(metres):
+                raise HTTPException(status_code=422, detail="Geçersiz hat deseni.")
+        for vehicle in active_vehicles(snapshot, pattern_id, now, alight):
+            minutes_to_board = None
+            if board is not None and vehicle["metres"] < metres[board]:
+                minutes_to_board = (metres[board] - vehicle["metres"]) / (vehicle["speed_kmh"] / 3.6) / 60
+                if minutes_to_board > APPROACH_WINDOW_MINUTES:
+                    continue
+            vehicle = {key: value for key, value in vehicle.items() if key not in _PRIVATE_VEHICLE_FIELDS}
+            found[vehicle["id"]] = {
+                **vehicle,
+                "route_id": pattern.route_id,
+                "route_code": public_line_code(pattern.route_code or pattern.route_id),
+                "mode": pattern.mode,
+                "headsign": " / ".join(sorted(pattern.headsigns)),
+                "minutes_to_board": None if minutes_to_board is None else round(minutes_to_board),
+                "passed_board": board is not None and minutes_to_board is None,
+            }
+    return {"generated_at": now.isoformat(), "simulated": True, "vehicles": list(found.values())}
+
+
+@app.get("/api/stop-arrivals")
+@app.get("/stop-arrivals", include_in_schema=False)
+def stop_arrivals(response: Response, name: str = Query(min_length=1, max_length=200)) -> dict:
+    """Simulated arrivals within the next hour at every platform of a stop name."""
+    snapshot, _ = _state()
+    response.headers["Cache-Control"] = "no-store"
+    stop_ids = _stops_named(snapshot).get(normalize_text(name))
+    if not stop_ids:
+        raise HTTPException(status_code=404, detail="Durak bulunamadı")
+    indexes = snapshot.indexes
+    now = _now()
+    arrivals, lines = [], {}
+    for stop_id in stop_ids:
+        for pattern_id, position in indexes.occurrences_at_stop[stop_id]:
+            pattern = snapshot.patterns[pattern_id]
+            # Terminal and set-down-only occurrences pick nobody up here.
+            if position == len(pattern.stop_ids) - 1 or position not in indexes.boardable_positions[pattern_id]:
+                continue
+            code = public_line_code(pattern.route_code or pattern.route_id)
+            destination = snapshot.stops[pattern.stop_ids[-1]].name
+            lines.setdefault(code, {"route_code": code, "route_id": pattern.route_id, "mode": pattern.mode})
+            for trip, time in trips_reaching(snapshot, pattern_id, position, now, now + STOP_ARRIVALS_WINDOW):
+                minutes = max(0, round((time - now).total_seconds() / 60))
+                state = vehicle_state(snapshot, trip, now)
+                vehicle = None
+                if state is not None and minutes <= NEARBY_VEHICLE_MINUTES:
+                    vehicle = {key: value for key, value in state.items() if key not in _PRIVATE_VEHICLE_FIELDS}
+                arrivals.append({
+                    "route_code": code,
+                    "route_id": pattern.route_id,
+                    "mode": pattern.mode,
+                    "headsign": " / ".join(sorted(pattern.headsigns)) or destination,
+                    "destination": destination,
+                    "platform_id": int(stop_id),
+                    "at": time.isoformat(),
+                    "minutes": minutes,
+                    # Stops still to reach, this one included; unknown before departure.
+                    "remaining_stops": None if state is None else position - state["previous_position"],
+                    "departs_at": None if state is not None else trip.departure.isoformat(),
+                    "speed_kmh": trip.speed_kmh,
+                    "vehicle": vehicle,
+                })
+    arrivals.sort(key=lambda arrival: (arrival["at"], arrival["route_code"]))
+    first = snapshot.stops[stop_ids[0]]
+    return {
+        "generated_at": now.isoformat(),
+        "simulated": True,
+        "stop": {"name": first.name, "district": first.district,
+                 "platforms": [_stop_to_response(snapshot, stop_id) for stop_id in stop_ids]},
+        "lines": sorted(lines.values(), key=lambda line: (not line["route_code"].isdigit(),
+                        int(line["route_code"]) if line["route_code"].isdigit() else 0, line["route_code"])),
+        "arrivals": arrivals[:MAX_STOP_ARRIVALS],
+    }
+
+
+def _stops_named(snapshot: RoutingSnapshot) -> dict[str, list[int]]:
+    """Active platforms grouped by normalized name, as in the stop catalog."""
+    cached = getattr(app.state, "stops_by_name", None)
+    if cached is None or cached[0] is not snapshot:
+        names: dict[str, list[int]] = {}
+        for stop_id, stop in snapshot.stops.items():
+            if snapshot.indexes.routes_at_stop.get(stop_id):
+                names.setdefault(normalize_text(stop.name), []).append(stop_id)
+        cached = app.state.stops_by_name = (snapshot, names)
+    return cached[1]
+
+
+def _now() -> datetime:
+    return datetime.now(TURKEY)
+
+
 def _resolve_query(query, stop_name_index, indexes):
     """Try the stop name before municipality text used by map search boxes."""
     name = query.get("name", "")
@@ -289,8 +419,15 @@ def _weekday_names(days: frozenset[Weekday]) -> list[str]:
 
 
 def _itinerary_to_response(snapshot: RoutingSnapshot, itinerary: Itinerary, departure=None) -> dict[str, object]:
-    departure = departure or datetime.now(timezone(timedelta(hours=3)))
+    departure = departure or _now()
     duration = ceil(itinerary_minutes(snapshot.indexes, itinerary))
+    # When the traveller is expected at each leg's boarding stop, using the
+    # same estimate as the displayed total.
+    reach_times, elapsed = [], 0.0
+    for leg in itinerary.legs:
+        reach_times.append(departure + timedelta(minutes=elapsed))
+        elapsed += leg_minutes(snapshot.indexes, leg) + (0 if leg.is_walking else BOARDING_WAIT_MINUTES)
+    line_options = [_line_options(snapshot, leg, itinerary.operating_days) for leg in itinerary.legs]
     return {
         "estimated_duration_minutes": duration,
         "estimated_arrival_at": (departure + timedelta(minutes=duration)).isoformat(),
@@ -316,7 +453,8 @@ def _itinerary_to_response(snapshot: RoutingSnapshot, itinerary: Itinerary, depa
                 "mode": leg.mode,
                 "route_id": leg.route_id,
                 "route_code": public_line_code(leg.route_code or leg.route_id),
-                "line_options": _line_options(snapshot, leg, itinerary.operating_days),
+                "line_options": options,
+                "upcoming_arrivals": [] if leg.is_walking else _upcoming_arrivals(snapshot, options, reach, departure),
                 "direction_id": leg.direction_id,
                 "headsigns": sorted(leg.headsigns),
                 "operating_days": _weekday_names(leg.operating_days),
@@ -336,9 +474,22 @@ def _itinerary_to_response(snapshot: RoutingSnapshot, itinerary: Itinerary, depa
                 "alight_index": leg.alight_index,
                 "geometry": _leg_geometry(snapshot, leg),
             }
-            for leg in itinerary.legs
+            for leg, options, reach in zip(itinerary.legs, line_options, reach_times)
         ],
     }
+
+
+def _upcoming_arrivals(snapshot, options, reach, now, limit=3):
+    """Next simulated vehicles of any interchangeable line at the boarding stop."""
+    arrivals = set()
+    for group in options:
+        for option in group["patterns"]:
+            for time in arrivals_at(snapshot, option["pattern_id"], option["board_index"],
+                                    reach, reach + UPCOMING_ARRIVALS_WINDOW):
+                arrivals.add((time.replace(second=0, microsecond=0), group["route_code"]))
+    return [{"route_code": code, "at": time.isoformat(),
+             "minutes": max(0, ceil((time - now).total_seconds() / 60))}
+            for time, code in sorted(arrivals)[:limit]]
 
 
 def _line_options(snapshot, leg, days):
@@ -386,5 +537,9 @@ if not os.getenv("VERCEL") and os.path.isdir(PUBLIC_DIR):
     @app.get("/line-info", include_in_schema=False)
     def line_page():
         return FileResponse(os.path.join(PUBLIC_DIR, "lines.html"))
+
+    @app.get("/stop-info", include_in_schema=False)
+    def stop_page():
+        return FileResponse(os.path.join(PUBLIC_DIR, "stops.html"))
 
     app.mount("/", StaticFiles(directory=PUBLIC_DIR, html=True), name="public")

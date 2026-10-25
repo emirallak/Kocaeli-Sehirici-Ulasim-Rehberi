@@ -5,6 +5,10 @@
       "destination": "/lines.html"
     },
     {
+      "source": "/stop-info",
+      "destination": "/stops.html"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/:path*"
     }

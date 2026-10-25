@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   const input = $('line-search'), options = $('line-options'), status = $('line-status');
   const days = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
-  let catalog, matches = [], active = -1, line, map, layers, controller, requestId = 0, lastId;
+  let catalog, matches = [], active = -1, line, map, layers, vehicles, controller, requestId = 0, lastId;
   const normalize = value => String(value).toLocaleLowerCase('tr-TR').replace(/ı/g, 'i')
     .normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
   const element = (tag, text, className) => {
@@ -59,6 +59,7 @@
     input.value = `${item.code} · ${item.name}`; close();
     lastId = item.id;
     controller?.abort(); controller = new AbortController(); const current = ++requestId;
+    vehicles?.stop();
     $('line-details').hidden = true; status.hidden = false; status.textContent = 'Hat bilgileri yükleniyor…';
     $('line-details').setAttribute('aria-busy', 'true'); $('line-retry').hidden = true;
     try {
@@ -183,6 +184,13 @@
       map = L.map($('line-map'), {scrollWheelZoom: false});
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
       layers = L.layerGroup().addTo(map);
+      if (typeof VehicleLayer !== 'undefined') {
+        vehicles = new VehicleLayer(map, {onUpdate: found => {
+          $('line-vehicle-note').textContent = found === null ? 'Simüle araç konumları şu an alınamadı.'
+            : found.length ? `Şu an bu güzergâhta ${found.length} araç var (simülasyon).`
+              : 'Şu an bu güzergâhta sefer yok (simülasyon).';
+        }});
+      }
     }
     map.closePopup(); layers.clearLayers();
     const valid = point => point.latitude != null && point.longitude != null && Number.isFinite(point.latitude) && Number.isFinite(point.longitude);
@@ -196,10 +204,17 @@
         .bindPopup(stopPopup(stop, index)).addTo(layers);
     });
     map.invalidateSize();
+    vehicles?.watch((variant.pattern_ids || [variant.id]).join(','));
     if (bounds.length) map.fitBounds(bounds, {padding: [24, 24], maxZoom: 15});
     else { map.setView([40.76, 29.94], 11); $('line-map-note').textContent = 'Bu güzergâh için koordinatlar bulunmuyor.'; }
   }
-  input.addEventListener('focus', () => { if (catalog) renderOptions(); else loadCatalog(); });
+  input.addEventListener('focus', () => {
+    if (catalog) renderOptions(); else loadCatalog();
+    // Phone keyboards cover half the screen; give the suggestions the rest.
+    if (!window.matchMedia?.('(max-width: 600px)').matches) return;
+    const field = input.closest('.stop-field');
+    setTimeout(() => { if (document.activeElement === input) field.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 300);
+  });
   input.addEventListener('input', renderOptions);
   input.addEventListener('keydown', event => {
     if (event.key === 'Escape') { close(); return; }
